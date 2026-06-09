@@ -402,7 +402,7 @@ build_thrift() {
 # llvm
 build_llvm() {
     export CFLAGS="-O3 -fno-omit-frame-pointer -std=c99 -D_POSIX_C_SOURCE=200112L ${FILE_PREFIX_MAP_OPTION}"
-    export CXXFLAGS="-O3 -fno-omit-frame-pointer -Wno-class-memaccess ${FILE_PREFIX_MAP_OPTION}"
+    export CXXFLAGS="-O3 -fno-omit-frame-pointer -Wno-class-memaccess -include cstdint ${FILE_PREFIX_MAP_OPTION}"
 
     LLVM_TARGET="X86"
     if [[ "${MACHINE_TYPE}" == "aarch64" ]]; then
@@ -573,7 +573,7 @@ build_simdjson() {
     #ref: https://github.com/simdjson/simdjson/blob/master/HACKING.md
     mkdir -p $BUILD_DIR
     cd $BUILD_DIR
-    $CMAKE_CMD -G "${CMAKE_GENERATOR}" -DCMAKE_CXX_FLAGS="-O3 -fPIC" -DCMAKE_C_FLAGS="-O3 -fPIC" -DCMAKE_POSITION_INDEPENDENT_CODE=True -DSIMDJSON_AVX512_ALLOWED=OFF ..
+    $CMAKE_CMD -G "${CMAKE_GENERATOR}" -DCMAKE_CXX_FLAGS="-O3 -fPIC -include cstdint" -DCMAKE_C_FLAGS="-O3 -fPIC" -DCMAKE_POSITION_INDEPENDENT_CODE=True -DSIMDJSON_AVX512_ALLOWED=OFF ..
     $CMAKE_CMD --build .
     mkdir -p $TP_INSTALL_DIR/lib
 
@@ -695,7 +695,7 @@ build_curl() {
 
     LDFLAGS="-L${TP_LIB_DIR}" LIBS="-lssl -lcrypto -ldl" \
     ./configure --prefix=$TP_INSTALL_DIR --disable-shared --enable-static \
-    --without-librtmp --with-ssl=${TP_INSTALL_DIR} --without-libidn2 --without-libgsasl --disable-ldap --enable-ipv6 --without-brotli
+    --without-librtmp --with-ssl=${TP_INSTALL_DIR} --without-libidn2 --without-libgsasl --disable-ldap --enable-ipv6 --without-brotli --without-libpsl --without-nghttp2
     make -j$PARALLEL
     make install
 }
@@ -756,7 +756,7 @@ build_rocksdb() {
 
     CFLAGS= \
     EXTRA_CFLAGS="-I ${TP_INCLUDE_DIR} -I ${TP_INCLUDE_DIR}/snappy -I ${TP_INCLUDE_DIR}/lz4 -L${TP_LIB_DIR} ${FILE_PREFIX_MAP_OPTION}" \
-    EXTRA_CXXFLAGS="-fPIC -Wno-redundant-move -Wno-deprecated-copy -Wno-stringop-truncation -Wno-pessimizing-move -I ${TP_INCLUDE_DIR} -I ${TP_INCLUDE_DIR}/snappy ${FILE_PREFIX_MAP_OPTION}" \
+    EXTRA_CXXFLAGS="-fPIC -Wno-redundant-move -Wno-deprecated-copy -Wno-stringop-truncation -Wno-pessimizing-move -I ${TP_INCLUDE_DIR} -I ${TP_INCLUDE_DIR}/snappy -include cstdint ${FILE_PREFIX_MAP_OPTION}" \
     EXTRA_LDFLAGS="-static-libstdc++ -static-libgcc" \
     PORTABLE=1 make USE_RTTI=1 -j$PARALLEL static_lib
 
@@ -770,17 +770,17 @@ build_kerberos() {
     cd $TP_SOURCE_DIR/$KRB5_SOURCE/src
     CFLAGS="-std=gnu17 -fcommon -fPIC ${FILE_PREFIX_MAP_OPTION}" LDFLAGS="-L$TP_INSTALL_DIR/lib -pthread -ldl" \
     ./configure --prefix=$TP_INSTALL_DIR --enable-static --disable-shared --with-spake-openssl=$TP_INSTALL_DIR
-    make -j$PARALLEL
-    make install
+    make -j$PARALLEL WARN_CFLAGS=
+    make install WARN_CFLAGS=
 }
 
 # sasl
 build_sasl() {
     check_if_source_exist $SASL_SOURCE
     cd $TP_SOURCE_DIR/$SASL_SOURCE
-    CFLAGS="-fPIC" LDFLAGS="-L$TP_INSTALL_DIR/lib -lresolv -pthread -ldl" ./autogen.sh --prefix=$TP_INSTALL_DIR --enable-gssapi=yes --enable-static --disable-shared --with-openssl=$TP_INSTALL_DIR --with-gss_impl=mit
-    make -j$PARALLEL
-    make install
+    CFLAGS="-fPIC -std=gnu17 -fcommon" LDFLAGS="-L$TP_INSTALL_DIR/lib -lresolv -pthread -ldl" ./autogen.sh --prefix=$TP_INSTALL_DIR --enable-gssapi=yes --enable-static --disable-shared --with-openssl=$TP_INSTALL_DIR --with-gss_impl=mit
+    make -j$PARALLEL SAD=
+    make install SAD=
 }
 
 # librdkafka
@@ -846,7 +846,7 @@ build_brotli() {
 
 # arrow
 build_arrow() {
-    export CXXFLAGS="-O3 -fno-omit-frame-pointer -fPIC -g ${FILE_PREFIX_MAP_OPTION}"
+    export CXXFLAGS="-O3 -fno-omit-frame-pointer -fPIC -g -include cstdint ${FILE_PREFIX_MAP_OPTION}"
     export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC -g ${FILE_PREFIX_MAP_OPTION}"
     export CPPFLAGS=$CXXFLAGS
 
@@ -1148,7 +1148,7 @@ build_mariadb() {
 
     unset CXXFLAGS
     unset CPPFLAGS
-    export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC ${FILE_PREFIX_MAP_OPTION}"
+    export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC -std=gnu17 ${FILE_PREFIX_MAP_OPTION}"
 
     # force use make build system, since ninja doesn't support install only headers
     CMAKE_GENERATOR="Unix Makefiles"
@@ -1159,6 +1159,7 @@ build_mariadb() {
     mkdir -p build && cd build
 
     $CMAKE_CMD .. -G "${CMAKE_GENERATOR}" -DCMAKE_BUILD_TYPE=Release    \
+                  -DCMAKE_C_FLAGS="$CFLAGS"                             \
                   -DWITH_UNIT_TESTS=OFF                                 \
                   -DBUILD_SHARED_LIBS=OFF                               \
                   -DOPENSSL_ROOT_DIR=${TP_INSTALL_DIR}                  \
@@ -1366,14 +1367,14 @@ build_avro_cpp() {
 
 # serders
 build_serdes() {
-    export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC -g"
+    export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC -g -include stdlib.h"
     check_if_source_exist $SERDES_SOURCE
     cd $TP_SOURCE_DIR/$SERDES_SOURCE
     export LIBS="-lrt -lpthread -lcurl -ljansson -lrdkafka -lrdkafka++ -lavro -lssl -lcrypto -ldl"
     ./configure --prefix=${TP_INSTALL_DIR} \
                 --libdir=${TP_INSTALL_DIR}/lib \
                 --CFLAGS="-I ${TP_INSTALL_DIR}/include"  \
-                --CXXFLAGS="-I ${TP_INSTALL_DIR}/include" \
+                --CXXFLAGS="-I ${TP_INSTALL_DIR}/include -include cstdint" \
                 --LDFLAGS="-L ${TP_INSTALL_DIR}/lib -L ${TP_INSTALL_DIR}/lib64" \
                 --enable-static \
                 --disable-shared
@@ -1444,7 +1445,7 @@ build_clucene() {
         -DBUILD_SHARED_LIBRARIES=OFF \
         -DBOOST_ROOT="$TP_INSTALL_DIR" \
         -DZLIB_ROOT="$TP_INSTALL_DIR" \
-        -DCMAKE_CXX_FLAGS="-g -fno-omit-frame-pointer -Wno-narrowing ${FILE_PREFIX_MAP_OPTION}" \
+        -DCMAKE_CXX_FLAGS="-g -fno-omit-frame-pointer -Wno-narrowing -include cstdint ${FILE_PREFIX_MAP_OPTION}" \
         -DUSE_STAT64=0 \
         -DCMAKE_BUILD_TYPE=Release \
         -DUSE_AVX2=$THIRD_PARTY_BUILD_WITH_AVX2 \
@@ -1553,7 +1554,7 @@ build_icu() {
     (
         export LD_LIBRARY_PATH=${STARROCKS_GCC_HOME}/lib:${STARROCKS_GCC_HOME}/lib64:${LD_LIBRARY_PATH:-}
         export CFLAGS="-O3 -fno-omit-frame-pointer -fPIC"
-        export CXXFLAGS="-O3 -fno-omit-frame-pointer -fPIC"
+        export CXXFLAGS="-O3 -fno-omit-frame-pointer -fPIC -include cstdint"
         ./runConfigureICU Linux --prefix=$TP_INSTALL_DIR --enable-static --disable-shared
         make -j$PARALLEL
         make install
@@ -1642,7 +1643,7 @@ export FILE_PREFIX_MAP_OPTION="-ffile-prefix-map=${TP_SOURCE_DIR}=. -ffile-prefi
 # set GLOBAL_C*FLAGS for easy restore in each sub build process
 export GLOBAL_CPPFLAGS="-I${TP_INCLUDE_DIR} "
 export GLOBAL_CFLAGS="-O3 -fno-omit-frame-pointer -std=gnu17 -fPIC -g -gz=zlib ${FILE_PREFIX_MAP_OPTION}"
-export GLOBAL_CXXFLAGS="-O3 -fno-omit-frame-pointer -Wno-class-memaccess -fPIC -g -gz=zlib ${FILE_PREFIX_MAP_OPTION}"
+export GLOBAL_CXXFLAGS="-O3 -fno-omit-frame-pointer -Wno-class-memaccess -fPIC -g -gz=zlib -include cstdint ${FILE_PREFIX_MAP_OPTION}"
 
 # set those GLOBAL_*FLAGS to the CFLAGS/CXXFLAGS/CPPFLAGS
 export CPPFLAGS=$GLOBAL_CPPFLAGS

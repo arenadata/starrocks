@@ -104,6 +104,8 @@ if [[ ! -z ${CUSTOM_CMAKE} ]]; then
 fi
 export CMAKE_CMD
 
+export CMAKE_POLICY_VERSION_MINIMUM=${CMAKE_POLICY_VERSION_MINIMUM:-3.5}
+
 CMAKE_GENERATOR="Unix Makefiles"
 BUILD_SYSTEM="make"
 if ninja --version 2>/dev/null; then

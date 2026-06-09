@@ -434,10 +434,10 @@ under the License.
             <artifactId>RoaringBitmap</artifactId>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.12 -->
+        <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.13 -->
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_2.12</artifactId>
+            <artifactId>spark-core_2.13</artifactId>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/org.apache.ivy/ivy -->
@@ -446,22 +446,22 @@ under the License.
             <artifactId>ivy</artifactId>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-launcher_2.12 -->
+        <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-launcher_2.13 -->
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-launcher_2.12</artifactId>
+            <artifactId>spark-launcher_2.13</artifactId>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-sql_2.12 -->
+        <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-sql_2.13 -->
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_2.12</artifactId>
+            <artifactId>spark-sql_2.13</artifactId>
         </dependency>
 
-        <!--  https://mvnrepository.com/artifact/org.apache.spark/spark-catalyst_2.12 -->
+        <!--  https://mvnrepository.com/artifact/org.apache.spark/spark-catalyst_2.13 -->
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-catalyst_2.12</artifactId>
+            <artifactId>spark-catalyst_2.13</artifactId>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.fasterxml.uuid/java-uuid-generator -->

@@ -470,10 +470,10 @@ LIBDIVIDE_NAME="libdivide-v5.2.0.tar.gz"
 LIBDIVIDE_SOURCE="libdivide-v5.2.0"
 LIBDIVIDE_MD5SUM="4ba77777192c295d6de2b86d88f3239a"
 
-HADOOPSRC_DOWNLOAD="https://archive.apache.org/dist/hadoop/common/hadoop-3.4.2/hadoop-3.4.2-src.tar.gz"
-HADOOPSRC_NAME="hadoop-3.4.2-src.tar.gz"
-HADOOPSRC_SOURCE="hadoop-3.4.2-src"
-HADOOPSRC_MD5SUM="7fa559909899a2e45bcd2e192358d93b"
+HADOOPSRC_DOWNLOAD="https://github.com/arenadata/hadoop/archive/refs/tags/v3.4.3.1-4.3.0-1.tar.gz"
+HADOOPSRC_NAME="hadoop-3.4.3.1-4.3.0-1.tar.gz"
+HADOOPSRC_SOURCE="hadoop-3.4.3.1-4.3.0-1"
+HADOOPSRC_MD5SUM="4700bebbf7b614c8199bd80740f6a92c"
 
 # all thirdparties which need to be downloaded is set in array TP_ARCHIVES
 TP_ARCHIVES="CLUCENE LIBEVENT OPENSSL THRIFT PROTOBUF GFLAGS GLOG GTEST RAPIDJSON SIMDJSON SNAPPY GPERFTOOLS ZLIB LZ4 BZIP CURL \

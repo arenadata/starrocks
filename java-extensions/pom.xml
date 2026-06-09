@@ -33,16 +33,16 @@
         <compiler-plugin.version>3.13.0</compiler-plugin.version>
         <java-extensions.home>${basedir}</java-extensions.home>
         <aws-v2-sdk.version>2.42.1</aws-v2-sdk.version>
-        <hadoop.version>3.4.3</hadoop.version>
-        <iceberg.version>1.10.0</iceberg.version>
-        <log4j2.version>2.23.1</log4j2.version>
+        <hadoop.version>3.4.3.1-4.3.0-1</hadoop.version>
+        <iceberg.version>1.10.1.1-4.3.0-1</iceberg.version>
+        <log4j2.version>2.25.3</log4j2.version>
         <junit.version>5.10.3</junit.version>
         <hive-apache.version>3.1.2-22</hive-apache.version>
         <jni-connector.version>1.0.0</jni-connector.version>
         <hadoop-ext.version>1.0.0</hadoop-ext.version>
         <java-utils.version>1.0.0</java-utils.version>
         <io.netty.version>4.1.133.Final</io.netty.version>
-        <protobuf-java.version>3.25.5</protobuf-java.version>
+        <protobuf-java.version>3.25.9</protobuf-java.version>
         <nimbusds.version>9.37.2</nimbusds.version>
         <commons-io.version>2.14.0</commons-io.version>
         <gcs.connector.version>3.0.13</gcs.connector.version>
@@ -51,21 +51,33 @@
         <jackson.version>2.21.1</jackson.version>
         <!-- jackson-annotations doesn't have 2.21.1 version released -->
         <jackson-annotations.version>2.21</jackson-annotations.version>
-        <guava.version>32.0.1-jre</guava.version>
+        <guava.version>33.5.0-jre</guava.version>
         <!-- hadoop-azure requires no more than jetty10+ -->
         <!-- https://stackoverflow.com/questions/66713254/spark-wasb-and-jetty-11 -->
         <jetty.version>9.4.58.v20250814</jetty.version>
-        <parquet.version>1.15.2</parquet.version>
+        <parquet.version>1.17.0</parquet.version>
         <airlift.version>2.0.3</airlift.version>
         <avro.version>1.12.0</avro.version>
-        <luben.zstd.jni.version>1.5.4-2</luben.zstd.jni.version>
+        <luben.zstd.jni.version>1.5.7-7</luben.zstd.jni.version>
         <kryo.version>4.0.2</kryo.version>
         <commons-beanutils.version>1.11.0</commons-beanutils.version>
         <lz4-java.version>1.10.1</lz4-java.version>
         <httpclient5.version>5.4.3</httpclient5.version>
-        <zookeeper.version>3.8.6</zookeeper.version>
+        <zookeeper.version>3.9.5.1-4.3.0-0</zookeeper.version>
         <bouncycastle.version>1.84</bouncycastle.version>
     </properties>
+
+    <repositories>
+        <repository>
+            <id>central</id>
+            <name>central maven repo https</name>
+            <url>https://repo.maven.apache.org/maven2/</url>
+        </repository>
+        <repository>
+            <id>arenadata</id>
+            <url>https://maven.pkg.github.com/arenadata/*</url>
+        </repository>
+    </repositories>
 
     <dependencyManagement>
         <dependencies>

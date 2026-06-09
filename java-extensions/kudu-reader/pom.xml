@@ -14,7 +14,7 @@
     <properties>
         <java-extensions.home>${basedir}/../</java-extensions.home>
         <kudu.version>1.17.1</kudu.version>
-        <zstd.version>1.5.5-5</zstd.version>
+        <zstd.version>1.5.7-7</zstd.version>
     </properties>
 
     <dependencies>

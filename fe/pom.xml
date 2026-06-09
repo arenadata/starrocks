@@ -42,14 +42,14 @@ under the License.
         <starrocks.home>${basedir}/../</starrocks.home>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <jprotobuf-starrocks.version>1.0.0</jprotobuf-starrocks.version>
-        <log4j.version>2.19.0</log4j.version>
+        <log4j.version>2.25.3</log4j.version>
         <jackson.version>2.21.1</jackson.version>
         <!-- jackson-annotations doesn't have 2.21.1 version released -->
         <jackson-annotations.version>2.21</jackson-annotations.version>
-        <spark.version>3.5.7</spark.version>
+        <spark.version>3.5.4.4-4.3.0-1</spark.version>
         <tomcat.version>8.5.70</tomcat.version>
-        <parquet.version>1.15.2</parquet.version>
-        <hadoop.version>3.4.3</hadoop.version>
+        <parquet.version>1.17.0</parquet.version>
+        <hadoop.version>3.4.3.1-4.3.0-1</hadoop.version>
         <gcs.connector.version>3.0.13</gcs.connector.version>
         <antlr.version>4.9.3</antlr.version>
         <skip.plugin>false</skip.plugin>
@@ -70,10 +70,10 @@ under the License.
         <avro.version>1.12.0</avro.version>
         <dnsjava.version>3.6.3</dnsjava.version>
         <nimbusds.version>9.37.2</nimbusds.version>
-        <protobuf-java.version>3.25.5</protobuf-java.version>
+        <protobuf-java.version>3.25.9</protobuf-java.version>
         <paimon.version>1.3.1</paimon.version>
         <delta-kernel.version>4.0.0rc1</delta-kernel.version>
-        <iceberg.version>1.10.0</iceberg.version>
+        <iceberg.version>1.10.1.1-4.3.0-1</iceberg.version>
         <staros.version>4.0.4</staros.version>
         <!-- hadoop-azure requires no more than jetty10+ -->
         <!-- https://stackoverflow.com/questions/66713254/spark-wasb-and-jetty-11 -->
@@ -83,7 +83,7 @@ under the License.
         <azure.version>1.2.34</azure.version>
         <fastutil.version>8.5.15</fastutil.version>
         <commons-beanutils.version>1.11.0</commons-beanutils.version>
-        <hbase.version>2.6.2</hbase.version>
+        <hbase.version>2.6.5.1-4.3.0-0</hbase.version>
         <lz4-java.version>1.10.1</lz4-java.version>
         <async-profiler.version>4.0</async-profiler.version>
         <bouncycastle.version>1.84</bouncycastle.version>
@@ -158,6 +158,10 @@ under the License.
                 <repository>
                     <id>kunpeng</id>
                     <url>https://mirror.iscas.ac.cn/kunpeng/maven/</url>
+                </repository>
+                <repository>
+                    <id>arenadata</id>
+                    <url>https://maven.pkg.github.com/arenadata/*</url>
                 </repository>
 
             </repositories>
@@ -295,7 +299,7 @@ under the License.
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
-                <version>32.0.1-jre</version>
+                <version>33.5.0-jre</version>
             </dependency>
 
             <!-- https://mvnrepository.com/artifact/com.fasterxml.jackson.core/jackson-core -->
@@ -652,10 +656,10 @@ under the License.
             </dependency>
 
             <!-- spark -->
-            <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.12 -->
+            <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.13 -->
             <dependency>
                 <groupId>org.apache.spark</groupId>
-                <artifactId>spark-core_2.12</artifactId>
+                <artifactId>spark-core_2.13</artifactId>
                 <version>${spark.version}</version>
                 <exclusions>
                     <exclusion>
@@ -734,18 +738,18 @@ under the License.
                 </exclusions>
             </dependency>
 
-            <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-launcher_2.12 -->
+            <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-launcher_2.13 -->
             <!-- spark load required -->
             <dependency>
                 <groupId>org.apache.spark</groupId>
-                <artifactId>spark-launcher_2.12</artifactId>
+                <artifactId>spark-launcher_2.13</artifactId>
                 <version>${spark.version}</version>
             </dependency>
 
-            <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-sql_2.12 -->
+            <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-sql_2.13 -->
             <dependency>
                 <groupId>org.apache.spark</groupId>
-                <artifactId>spark-sql_2.12</artifactId>
+                <artifactId>spark-sql_2.13</artifactId>
                 <version>${spark.version}</version>
                 <scope>provided</scope>
             </dependency>
@@ -753,7 +757,7 @@ under the License.
             <!-- https://mvnrepository.com/artifact/org.apache.spark/spark-catalyst -->
             <dependency>
                 <groupId>org.apache.spark</groupId>
-                <artifactId>spark-catalyst_2.12</artifactId>
+                <artifactId>spark-catalyst_2.13</artifactId>
                 <version>${spark.version}</version>
                 <scope>provided</scope>
             </dependency>
@@ -882,7 +886,7 @@ under the License.
             <dependency>
                 <groupId>org.scala-lang</groupId>
                 <artifactId>scala-library</artifactId>
-                <version>2.12.10</version>
+                <version>2.13.15</version>
             </dependency>
 
             <!-- https://mvnrepository.com/artifact/org.scala-lang/scala-library -->
@@ -1504,7 +1508,7 @@ under the License.
             <dependency>
                 <groupId>org.apache.ranger</groupId>
                 <artifactId>ranger-plugins-common</artifactId>
-                <version>2.8.0</version>
+                <version>2.6.0.4-2.2.0-1</version>
                 <exclusions>
                     <exclusion>
                         <groupId>org.elasticsearch</groupId>

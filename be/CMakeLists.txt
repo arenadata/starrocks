@@ -1057,9 +1057,19 @@ if (NOT ("${MAKE_TEST}" STREQUAL "ON" AND "${BUILD_FOR_SANITIZE}" STREQUAL "ON")
 endif()
 
 set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS}
-    ${WL_LINK_STATIC} -lgomp -lbfd
-    ${WL_LINK_DYNAMIC} -lresolv -liberty -lc -lm -ldl -rdynamic -pthread -Wl,-wrap,__cxa_throw -Wl,-wrap,__floattidf
+    ${WL_LINK_STATIC} -lbfd
+    ${WL_LINK_DYNAMIC} -lgomp -lresolv -liberty -lc -lm -ldl -rdynamic -pthread -Wl,-wrap,__cxa_throw -Wl,-wrap,__floattidf
 )
+
+file(GLOB _sframe_libs
+    /usr/lib/x86_64-linux-gnu/libsframe.so*
+    /usr/lib64/libsframe.so*
+    /usr/lib/libsframe.so*
+    /lib/x86_64-linux-gnu/libsframe.so*)
+if (_sframe_libs)
+    list(GET _sframe_libs 0 _sframe_lib)
+    set(STARROCKS_LINK_LIBS ${STARROCKS_LINK_LIBS} ${_sframe_lib})
+endif()
 
 # link gcov if WITH_GCOV is on
 if (WITH_GCOV)

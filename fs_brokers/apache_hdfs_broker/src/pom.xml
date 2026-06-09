@@ -40,16 +40,16 @@ under the License.
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <hadoop.version>3.4.3</hadoop.version>
-        <guava.version>32.0.1-jre</guava.version>
-        <zookeeper.version>3.9.5</zookeeper.version>
-        <protobuf.version>3.25.5</protobuf.version>
-        <thrift.version>0.14.1</thrift.version>
+        <hadoop.version>3.4.3.1-4.3.0-1</hadoop.version>
+        <guava.version>33.5.0-jre</guava.version>
+        <zookeeper.version>3.9.5.1-4.3.0-0</zookeeper.version>
+        <protobuf.version>3.25.9</protobuf.version>
+        <thrift.version>0.20.0</thrift.version>
         <tomcat.version>9.0.117</tomcat.version>
-        <log4j.version>2.17.1</log4j.version>
+        <log4j.version>2.25.3</log4j.version>
         <jackson.version>2.21.1</jackson.version>
         <jackson-annotations.version>2.21</jackson-annotations.version>
-        <avro.version>1.11.4</avro.version>
+        <avro.version>1.11.5</avro.version>
         <jetty.version>9.4.58.v20250814</jetty.version>
         <io.netty.version>4.1.133.Final</io.netty.version>
         <aws-v2-sdk.version>2.42.1</aws-v2-sdk.version>
@@ -104,6 +104,10 @@ under the License.
                 <repository>
                     <id>cloudera</id>
                     <url>https://repository.cloudera.com/artifactory/cloudera-repos/</url>
+                </repository>
+                <repository>
+                    <id>arenadata</id>
+                    <url>https://maven.pkg.github.com/arenadata/*</url>
                 </repository>
             </repositories>
         </profile>

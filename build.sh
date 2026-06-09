@@ -45,15 +45,7 @@ fi
 
 cd $STARROCKS_HOME
 if [ -z $STARROCKS_VERSION ]; then
-    tag_name=$(git describe --tags --exact-match 2>/dev/null)
-    branch_name=$(git symbolic-ref -q --short HEAD)
-    if [ ! -z $tag_name ]; then
-        export STARROCKS_VERSION=$tag_name
-    elif [ ! -z $branch_name ]; then
-        export STARROCKS_VERSION=$branch_name
-    else
-        export STARROCKS_VERSION=$(git rev-parse --short=7 HEAD)
-    fi
+    export STARROCKS_VERSION="4.0.10.1-4.4.0-0"
 fi
 
 if [ -z $STARROCKS_COMMIT_HASH ] ; then
