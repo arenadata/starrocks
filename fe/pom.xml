@@ -50,6 +50,7 @@ under the License.
         <tomcat.version>8.5.70</tomcat.version>
         <parquet.version>1.17.0</parquet.version>
         <hadoop.version>3.4.3.1-4.3.0-1</hadoop.version>
+        <ozone.version>2.1.0.1-4.3.0-1</ozone.version>
         <gcs.connector.version>3.0.13</gcs.connector.version>
         <antlr.version>4.9.3</antlr.version>
         <skip.plugin>false</skip.plugin>
@@ -979,6 +980,12 @@ under the License.
                 <groupId>org.jdom</groupId>
                 <artifactId>jdom2</artifactId>
                 <version>2.0.6.1</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.ozone</groupId>
+                <artifactId>ozone-filesystem-hadoop3</artifactId>
+                <version>${ozone.version}</version>
             </dependency>
 
             <!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-aliyun -->

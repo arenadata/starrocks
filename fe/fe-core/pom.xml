@@ -534,6 +534,11 @@ under the License.
         </dependency>
 
         <dependency>
+            <groupId>org.apache.ozone</groupId>
+            <artifactId>ozone-filesystem-hadoop3</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.jdom</groupId>
             <artifactId>jdom2</artifactId>
         </dependency>
