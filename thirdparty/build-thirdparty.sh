@@ -388,7 +388,8 @@ build_thrift() {
     --prefix=$TP_INSTALL_DIR --docdir=$TP_INSTALL_DIR/doc --enable-static --disable-shared --disable-tests \
     --disable-tutorial --without-qt4 --without-qt5 --without-csharp --without-erlang --without-nodejs \
     --without-lua --without-perl --without-php --without-php_extension --without-dart --without-ruby \
-    --without-haskell --without-go --without-haxe --without-d --without-python -without-java -without-rs --with-cpp \
+    --without-haskell --without-go --without-haxe --without-d --without-python -without-java -without-rs \
+    --without-swift --without-netstd --with-cpp \
     --with-libevent=$TP_INSTALL_DIR --with-boost=$TP_INSTALL_DIR --with-openssl=$TP_INSTALL_DIR
 
     if [ -f compiler/cpp/thrifty.hh ];then
@@ -1641,9 +1642,10 @@ strip_binary() {
 # strip `$TP_SOURCE_DIR` and `$TP_INSTALL_DIR` from source code file path
 export FILE_PREFIX_MAP_OPTION="-ffile-prefix-map=${TP_SOURCE_DIR}=. -ffile-prefix-map=${TP_INSTALL_DIR}=."
 # set GLOBAL_C*FLAGS for easy restore in each sub build process
+WNO_FALSE_POSITIVE_ERRORS="-Wno-error=array-bounds -Wno-error=stringop-overflow -Wno-error=stringop-overread -Wno-error=maybe-uninitialized -Wno-error=restrict -Wno-error=dangling-pointer -Wno-error=nonnull -Wno-error=free-nonheap-object"
 export GLOBAL_CPPFLAGS="-I${TP_INCLUDE_DIR} "
-export GLOBAL_CFLAGS="-O3 -fno-omit-frame-pointer -std=gnu17 -fPIC -g -gz=zlib ${FILE_PREFIX_MAP_OPTION}"
-export GLOBAL_CXXFLAGS="-O3 -fno-omit-frame-pointer -Wno-class-memaccess -fPIC -g -gz=zlib -include cstdint ${FILE_PREFIX_MAP_OPTION}"
+export GLOBAL_CFLAGS="-O3 -fno-omit-frame-pointer -std=gnu17 -fPIC -g -gz=zlib ${FILE_PREFIX_MAP_OPTION} ${WNO_FALSE_POSITIVE_ERRORS}"
+export GLOBAL_CXXFLAGS="-O3 -fno-omit-frame-pointer -Wno-class-memaccess -fPIC -g -gz=zlib -include cstdint ${FILE_PREFIX_MAP_OPTION} ${WNO_FALSE_POSITIVE_ERRORS}"
 
 # set those GLOBAL_*FLAGS to the CFLAGS/CXXFLAGS/CPPFLAGS
 export CPPFLAGS=$GLOBAL_CPPFLAGS

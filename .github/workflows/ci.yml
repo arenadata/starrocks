@@ -1,0 +1,124 @@
+name: CI
+
+on:
+  push:
+    branches: ['develop/**', 'release/**']
+  pull_request:
+    branches: ['develop/**', 'release/**']
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  BUILD_PACKAGES: >-
+    build-essential automake binutils-dev bison byacc ccache flex
+    libiberty-dev libtool maven zip unzip make cmake ninja-build patch lld
+    bzip2 wget curl xz-utils python3 python-is-python3
+  THIRDPARTY_KEY_FILES: >-
+    thirdparty/vars.sh
+    thirdparty/build-thirdparty.sh
+    thirdparty/download-thirdparty.sh
+    thirdparty/patches/**
+
+jobs:
+  thirdparty:
+    name: Thirdparty
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    outputs:
+      key: ${{ steps.key.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: key
+        run: echo "value=thirdparty-ubuntu24-${{ hashFiles('thirdparty/vars.sh', 'thirdparty/build-thirdparty.sh', 'thirdparty/download-thirdparty.sh', 'thirdparty/patches/**') }}" >> "$GITHUB_OUTPUT"
+      - id: cache
+        uses: actions/cache@v4
+        with:
+          path: thirdparty/installed
+          key: ${{ steps.key.outputs.value }}
+      - name: Install build dependencies
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: sudo apt-get update -q && sudo apt-get install -y -q ${{ env.BUILD_PACKAGES }}
+      - name: Build thirdparty
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: cd thirdparty && ./build-thirdparty.sh -j "$(nproc)"
+
+  fe-ut:
+    name: FE UT
+    needs: thirdparty
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+          server-id: arenadata
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+      - name: Restore thirdparty
+        uses: actions/cache/restore@v4
+        with:
+          path: thirdparty/installed
+          key: ${{ needs.thirdparty.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Install build dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q ${{ env.BUILD_PACKAGES }}
+      - name: Run FE unit tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./run-fe-ut.sh
+      - name: Upload FE surefire reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fe-surefire-reports
+          path: '**/target/surefire-reports/'
+          if-no-files-found: ignore
+
+  be-ut:
+    name: BE UT (ASAN)
+    needs: thirdparty
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      CCACHE_MAXSIZE: 5G
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+          server-id: arenadata
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+      - name: Restore thirdparty
+        uses: actions/cache/restore@v4
+        with:
+          path: thirdparty/installed
+          key: ${{ needs.thirdparty.outputs.key }}
+          fail-on-cache-miss: true
+      - name: ccache
+        uses: actions/cache@v4
+        with:
+          path: .ccache
+          key: be-ccache-${{ github.sha }}
+          restore-keys: be-ccache-
+      - name: Install build dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q ${{ env.BUILD_PACKAGES }}
+      - name: Run BE unit tests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./run-be-ut.sh
+      - name: Upload BE test log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: be-ut-log
+          path: be/ut_build_ASAN/gtest-parallel-logs/
+          if-no-files-found: ignore

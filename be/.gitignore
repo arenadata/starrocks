@@ -1,6 +1,7 @@
 /*
 !.gitignore
 !benchmark/
+!build-support/
 !cmake_modules/
 !src/
 !test/
