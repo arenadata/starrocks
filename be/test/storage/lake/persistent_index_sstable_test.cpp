@@ -529,6 +529,9 @@ TEST_F(PersistentIndexSstableTest, test_metric_sst_open_read_error) {
 }
 
 TEST_F(PersistentIndexSstableTest, test_sst_open_retry_after_clear_corrupted_cache) {
+#ifndef USE_STAROS
+    GTEST_SKIP() << "clear corrupted cache is only supported in shared-data mode";
+#endif
     const std::string filename = "open_retry_corrupted_cache.sst";
     const std::string path = lake::join_path(kTestDir, filename);
     uint64_t filesize = 0;
@@ -597,6 +600,9 @@ TEST_F(PersistentIndexSstableTest, test_metric_sst_multiget_read_error) {
 }
 
 TEST_F(PersistentIndexSstableTest, test_multiget_retry_after_clear_corrupted_cache) {
+#ifndef USE_STAROS
+    GTEST_SKIP() << "clear corrupted cache is only supported in shared-data mode";
+#endif
     const std::string path = lake::join_path(kTestDir, "multiget_retry_corrupted_cache.sst");
     uint64_t filesize = 0;
     build_test_sst(path, &filesize);

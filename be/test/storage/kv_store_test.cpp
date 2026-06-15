@@ -45,6 +45,7 @@
 #include "fs/fs_util.h"
 #include "runtime/mem_tracker.h"
 #include "storage/olap_define.h"
+#include "testutil/scoped_updater.h"
 
 #ifndef BE_TEST
 #define BE_TEST
@@ -166,11 +167,16 @@ TEST_F(KVStoreTest, calc_rocksdb_write_buffer_size_test) {
     ASSERT_EQ(size, 4294967296 * config::rocksdb_write_buffer_memory_percent / 100 / 2);
 
     // case2: two paths
-    std::string old_val2 = config::storage_root_path;
-    config::storage_root_path = "/storage;/storage2";
+    const std::string base = std::filesystem::current_path().string();
+    const std::string disk1 = base + "/kv_store_test_disk1";
+    const std::string disk2 = base + "/kv_store_test_disk2";
+    fs::remove_all(disk1);
+    fs::remove_all(disk2);
+    SCOPED_UPDATE(std::string, config::storage_root_path, disk1 + ";" + disk2);
     auto size2 = KVStore::calc_rocksdb_write_buffer_size(&mem_tracker);
+    fs::remove_all(disk1);
+    fs::remove_all(disk2);
     ASSERT_EQ(size2, 67108864L);
-    config::storage_root_path = old_val2;
 }
 
 TEST_F(KVStoreTest, iterate_with_compact_on_timeout_test) {

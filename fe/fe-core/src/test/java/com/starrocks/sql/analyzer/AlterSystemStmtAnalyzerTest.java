@@ -15,6 +15,7 @@
 
 package com.starrocks.sql.analyzer;
 
+import com.starrocks.common.util.NetUtils;
 import com.starrocks.common.util.PropertyAnalyzer;
 import com.starrocks.persist.OperationType;
 import com.starrocks.qe.ConnectContext;
@@ -35,7 +36,6 @@ import com.starrocks.utframe.StarRocksTestBase;
 import com.starrocks.utframe.UtFrameUtils;
 import mockit.Mock;
 import mockit.MockUp;
-import mockit.Mocked;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -61,14 +61,11 @@ public class AlterSystemStmtAnalyzerTest extends StarRocksTestBase {
         UtFrameUtils.setUpForPersistTest();
     }
 
-    @Mocked
-    InetAddress addr1;
-
     private void mockNet() {
-        new MockUp<InetAddress>() {
+        new MockUp<NetUtils>() {
             @Mock
             public InetAddress getByName(String host) {
-                return addr1;
+                return InetAddress.getLoopbackAddress();
             }
         };
     }

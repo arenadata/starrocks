@@ -57,7 +57,7 @@ Status PersistentIndexSstable::init(std::unique_ptr<RandomAccessFile> rf, const 
         options.filter_policy = _filter_policy.get();
     }
     options.block_cache = cache;
-    sstable::Table* table;
+    sstable::Table* table = nullptr;
     auto open_st = sstable::Table::Open(options, rf.get(), sstable_pb.filesize(), &table);
     TEST_SYNC_POINT_CALLBACK("PersistentIndexSstable::init:table_open_error", &open_st);
     if (open_st.is_corruption()) {
@@ -76,6 +76,7 @@ Status PersistentIndexSstable::init(std::unique_ptr<RandomAccessFile> rf, const 
         }
     }
     if (!open_st.ok()) {
+        delete table;
         StarRocksMetrics::instance()->pk_index_sst_read_error_total.increment(1);
         LOG(WARNING) << "Failed to open PersistentIndex SST file: " << sstable_pb.filename() << ", error: " << open_st;
         return open_st;

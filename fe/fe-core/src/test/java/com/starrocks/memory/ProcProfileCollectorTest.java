@@ -16,6 +16,7 @@ package com.starrocks.memory;
 
 import com.starrocks.common.Config;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,39 +26,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ProcProfileCollectorTest {
 
+    @TempDir
+    public File tempDir;
+
     @Test
     public void runAfterCatalogReady() throws IOException, InterruptedException {
+        String prevSysLogDir = Config.sys_log_dir;
+        Config.sys_log_dir = tempDir.getAbsolutePath();
         Config.proc_profile_collect_time_s = 1;
-        ProcProfileCollector collector = new ProcProfileCollector();
-        String dir = collector.getProfileLogDir();
-        File profileDir = new File(dir);
+        try {
+            ProcProfileCollector collector = new ProcProfileCollector();
+            String dir = collector.getProfileLogDir();
+            File profileDir = new File(dir);
 
-        // count the number of files in the directory
-        Function<Void, Integer> countFiles = (x) -> {
-            if (!profileDir.exists() || !profileDir.isDirectory()) {
-                return 0;
-            }
-            int count = 0;
-            String[] files = profileDir.list();
-            if (files == null) {
-                return 0;
-            }
-            for (String filename : files) {
-                if (filename.startsWith("cpu-profile-") && filename.endsWith(".tar.gz")) {
-                    count++;
+            // count the number of files in the directory
+            Function<Void, Integer> countFiles = (x) -> {
+                if (!profileDir.exists() || !profileDir.isDirectory()) {
+                    return 0;
                 }
-            }
-            return count;
-        };
+                int count = 0;
+                String[] files = profileDir.list();
+                if (files == null) {
+                    return 0;
+                }
+                for (String filename : files) {
+                    if (filename.startsWith("cpu-profile-") && filename.endsWith(".tar.gz")) {
+                        count++;
+                    }
+                }
+                return count;
+            };
 
-        int prevCount = countFiles.apply(null);
+            int prevCount = countFiles.apply(null);
 
-        collector.runAfterCatalogReady();
-        assertTrue(profileDir.exists(), "Profile log directory should exist");
-        assertTrue(profileDir.isDirectory(), "Profile log directory should be a directory");
+            collector.runAfterCatalogReady();
+            assertTrue(profileDir.exists(), "Profile log directory should exist");
+            assertTrue(profileDir.isDirectory(), "Profile log directory should be a directory");
 
-        collector.runAfterCatalogReady();
-        int afterCount = countFiles.apply(null);
-        assertTrue(afterCount > prevCount, String.format("prev: %d, after: %d", prevCount, afterCount));
+            collector.runAfterCatalogReady();
+            int afterCount = countFiles.apply(null);
+            assertTrue(afterCount > prevCount, String.format("prev: %d, after: %d", prevCount, afterCount));
+        } finally {
+            Config.sys_log_dir = prevSysLogDir;
+        }
     }
 }

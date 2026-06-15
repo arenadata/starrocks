@@ -50,7 +50,13 @@ private:
 } // namespace
 
 class ConfigTest : public testing::Test {
-    void SetUp() override { config::TEST_clear_configs(); }
+    void SetUp() override {
+        _saved_fields = config::Field::fields();
+        config::TEST_clear_configs();
+    }
+    void TearDown() override { config::Field::fields() = _saved_fields; }
+
+    std::map<std::string, config::Field*> _saved_fields;
 
 protected:
     void find_conf_and_check_value(const std::string& name, int64_t count, const std::string& value);

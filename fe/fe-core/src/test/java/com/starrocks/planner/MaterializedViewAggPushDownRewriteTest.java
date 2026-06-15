@@ -1226,12 +1226,12 @@ public class MaterializedViewAggPushDownRewriteTest extends MaterializedViewTest
         String plan = getQueryPlan(query, TExplainLevel.NORMAL);
         System.out.println(plan);
         PlanTestBase.assertNotContains(plan, ": count AS BIGINT)");
-        PlanTestBase.assertContains(plan, "mv1",
-                "  2:AGGREGATE (update serialize)\n" +
-                        "  |  STREAMING\n" +
-                        "  |  output: sum(40: sum(l.LO_REVENUE + 1)), max(41: max(l.LO_REVENUE + 1)), " +
-                        "bitmap_union(43: bitmap_agg(l.LO_REVENUE + 1))\n" +
-                        "  |  group by: 57: cast, 39: LO_ORDERDATE");
+        PlanTestBase.assertContains(plan, "TABLE: mv1");
+        PlanTestBase.assertContains(plan, "MaterializedView: true");
+        PlanTestBase.assertContains(plan, "sum(40: sum(l.LO_REVENUE + 1))");
+        PlanTestBase.assertContains(plan, "max(41: max(l.LO_REVENUE + 1))");
+        PlanTestBase.assertContains(plan, "bitmap_union(43: bitmap_agg(l.LO_REVENUE + 1))");
+        PlanTestBase.assertContains(plan, "group by: 57: cast, 39: LO_ORDERDATE");
         starRocksAssert.dropMaterializedView("mv1");
     }
 

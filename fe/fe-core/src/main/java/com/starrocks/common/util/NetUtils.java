@@ -96,6 +96,18 @@ public class NetUtils {
         return hosts;
     }
 
+    public static InetAddress getLocalHost() throws UnknownHostException {
+        return InetAddress.getLocalHost();
+    }
+
+    public static InetAddress getByName(String host) throws UnknownHostException {
+        return InetAddress.getByName(host);
+    }
+
+    public static String getCanonicalHostName(InetAddress address) {
+        return address.getCanonicalHostName();
+    }
+
     public static boolean isPortUsing(String host, int port) throws UnknownHostException {
         boolean flag = false;
         try (Socket socket = new Socket(host, port)) {

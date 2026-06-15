@@ -52,13 +52,13 @@ import mockit.Expectations;
 import mockit.Mock;
 import mockit.MockUp;
 import mockit.Mocked;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.xnio.StreamConnection;
 
-import java.io.IOException;
 import java.nio.ByteBuffer;
 
 public class ConnectProcessorExecuteTest extends DDLTestBase {
@@ -78,6 +78,8 @@ public class ConnectProcessorExecuteTest extends DDLTestBase {
 
     private static PQueryStatistics statistics = new PQueryStatistics();
 
+    private static boolean channelMocked;
+    private static int sequenceIdResetCount;
 
     @BeforeAll
     public static void setUpClass() {
@@ -187,33 +189,44 @@ public class ConnectProcessorExecuteTest extends DDLTestBase {
         super.setUp();
     }
 
-    private static MysqlChannel mockChannel(ByteBuffer packet) {
-        try {
-            MysqlChannel channel = new MysqlChannel(connection);
-            new Expectations(channel) {
-                {
-                    // Mock receive
-                    channel.fetchOnePacket();
-                    minTimes = 0;
-                    result = packet;
-
-                    // Mock reset
-                    channel.setSequenceId(0);
-                    times = 1;
-
-                    // Mock send
-                    channel.sendAndFlush((ByteBuffer) any);
-                    minTimes = 0;
-
-                    channel.getRemoteHostPortString();
-                    minTimes = 0;
-                    result = "127.0.0.1:12345";
-                }
-            };
-            return channel;
-        } catch (IOException e) {
-            return null;
+    @AfterEach
+    public void tearDown() {
+        if (channelMocked) {
+            channelMocked = false;
+            Assertions.assertEquals(1, sequenceIdResetCount);
         }
+    }
+
+    private static MysqlChannel mockChannel(ByteBuffer packet) {
+        MysqlChannel channel = new MysqlChannel(connection);
+        channelMocked = true;
+        sequenceIdResetCount = 0;
+        new MockUp<MysqlChannel>() {
+            // Mock receive
+            @Mock
+            public ByteBuffer fetchOnePacket() {
+                return packet;
+            }
+
+            // Mock reset
+            @Mock
+            public void setSequenceId(int sequenceId) {
+                if (sequenceId == 0) {
+                    sequenceIdResetCount++;
+                }
+            }
+
+            // Mock send
+            @Mock
+            public void sendAndFlush(ByteBuffer buffer) {
+            }
+
+            @Mock
+            public String getRemoteHostPortString() {
+                return "127.0.0.1:12345";
+            }
+        };
+        return channel;
     }
 
     private static ConnectContext initMockContext(MysqlChannel channel, GlobalStateMgr globalStateMgr) {

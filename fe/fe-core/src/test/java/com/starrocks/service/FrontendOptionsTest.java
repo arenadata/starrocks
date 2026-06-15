@@ -18,8 +18,8 @@ import com.starrocks.common.Config;
 import com.starrocks.common.util.NetUtils;
 import mockit.Mock;
 import mockit.MockUp;
-import mockit.Mocked;
 import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -28,7 +28,6 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
@@ -40,11 +39,15 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 public class FrontendOptionsTest {
 
-    @Mocked
-    Inet4Address addr;
+    private InetAddress addr;
 
     private boolean useFqdn = true;
     private boolean useFqdnFile = true;
+
+    @BeforeEach
+    public void setUp() throws UnknownHostException {
+        addr = InetAddress.getByAddress("sandbox", new byte[] {127, 0, 0, 10});
+    }
 
     @Test
     public void cidrTest() {
@@ -75,26 +78,16 @@ public class FrontendOptionsTest {
     }
 
     private void mockNet() {
-        new MockUp<Inet4Address>() {
-            @Mock
-            public InetAddress getLocalHost() throws UnknownHostException {
-                return addr;
-            }
-            @Mock
-            public String getHostAddress() {
-                return "127.0.0.10";
-            }
-            @Mock
-            public String getCanonicalHostName() {
-                return "sandbox";
-            }
-        };
         new MockUp<NetUtils>() {
             @Mock
             public List<InetAddress> getHosts() {
                 List<InetAddress> hosts = new ArrayList<>();
                 hosts.add(addr);
                 return hosts;
+            }
+            @Mock
+            public String getCanonicalHostName(InetAddress address) {
+                return "sandbox";
             }
         };
 
@@ -169,7 +162,7 @@ public class FrontendOptionsTest {
             Config.priority_networks = "";
             testInitAddrUseFqdnCommonMock();
             List<InetAddress> hosts = NetUtils.getHosts();
-            new MockUp<InetAddress>() {
+            new MockUp<NetUtils>() {
                 @Mock
                 public InetAddress getLocalHost() throws UnknownHostException {
                     throw new UnknownHostException();
@@ -185,19 +178,14 @@ public class FrontendOptionsTest {
         assertThrows(IllegalAccessException.class, () -> {
             testInitAddrUseFqdnCommonMock();
             List<InetAddress> hosts = NetUtils.getHosts();
-            new MockUp<InetAddress>() {
+            new MockUp<NetUtils>() {
                 @Mock
                 public InetAddress getLocalHost() throws UnknownHostException {
                     return addr;
                 }
 
                 @Mock
-                public String getHostAddress() {
-                    return "127.0.0.10";
-                }
-
-                @Mock
-                public String getCanonicalHostName() {
+                public String getCanonicalHostName(InetAddress address) {
                     return null;
                 }
             };
@@ -210,19 +198,14 @@ public class FrontendOptionsTest {
         assertThrows(IllegalAccessException.class, () -> {
             testInitAddrUseFqdnCommonMock();
             List<InetAddress> hosts = NetUtils.getHosts();
-            new MockUp<InetAddress>() {
+            new MockUp<NetUtils>() {
                 @Mock
                 public InetAddress getLocalHost() throws UnknownHostException {
                     return addr;
                 }
 
                 @Mock
-                public String getHostAddress() {
-                    return "127.0.0.10";
-                }
-
-                @Mock
-                public String getCanonicalHostName() {
+                public String getCanonicalHostName(InetAddress address) {
                     return "sandbox";
                 }
 
@@ -240,19 +223,14 @@ public class FrontendOptionsTest {
         assertThrows(IllegalAccessException.class, () -> {
             testInitAddrUseFqdnCommonMock();
             List<InetAddress> hosts = NetUtils.getHosts();
-            new MockUp<InetAddress>() {
+            new MockUp<NetUtils>() {
                 @Mock
                 public InetAddress getLocalHost() throws UnknownHostException {
                     return addr;
                 }
 
                 @Mock
-                public String getHostAddress() {
-                    return "127.0.0.10";
-                }
-
-                @Mock
-                public String getCanonicalHostName() {
+                public String getCanonicalHostName(InetAddress address) {
                     return "sandbox";
                 }
 
@@ -269,17 +247,13 @@ public class FrontendOptionsTest {
     public void testGetStartWithFQDN() {
         testInitAddrUseFqdnCommonMock();
         List<InetAddress> hosts = NetUtils.getHosts();
-        new MockUp<InetAddress>() {
+        new MockUp<NetUtils>() {
             @Mock
             public InetAddress getLocalHost() throws UnknownHostException {
                 return addr;
             }
             @Mock
-            public String getHostAddress() {
-                return "127.0.0.10";
-            }
-            @Mock
-            public String getCanonicalHostName() {
+            public String getCanonicalHostName(InetAddress address) {
                 return "sandbox";
             }
             @Mock
@@ -307,19 +281,14 @@ public class FrontendOptionsTest {
                 }
             };
             List<InetAddress> hosts = NetUtils.getHosts();
-            new MockUp<InetAddress>() {
+            new MockUp<NetUtils>() {
                 @Mock
                 public InetAddress getLocalHost() throws UnknownHostException {
                     return addr;
                 }
 
                 @Mock
-                public String getHostAddress() {
-                    return "127.0.0.10";
-                }
-
-                @Mock
-                public String getCanonicalHostName() {
+                public String getCanonicalHostName(InetAddress address) {
                     return "sandbox";
                 }
 

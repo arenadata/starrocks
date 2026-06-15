@@ -51,6 +51,7 @@ under the License.
         <parquet.version>1.17.0</parquet.version>
         <hadoop.version>3.4.3.1-4.3.0-1</hadoop.version>
         <ozone.version>2.1.0.1-4.3.0-1</ozone.version>
+        <byte-buddy.version>1.17.6</byte-buddy.version>
         <gcs.connector.version>3.0.13</gcs.connector.version>
         <antlr.version>4.9.3</antlr.version>
         <skip.plugin>false</skip.plugin>
@@ -988,6 +989,17 @@ under the License.
                 <version>${ozone.version}</version>
             </dependency>
 
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>net.bytebuddy</groupId>
+                <artifactId>byte-buddy-agent</artifactId>
+                <version>${byte-buddy.version}</version>
+            </dependency>
+
             <!-- https://mvnrepository.com/artifact/org.apache.hadoop/hadoop-aliyun -->
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
@@ -1221,7 +1233,7 @@ under the License.
             <dependency>
                 <groupId>org.apache.groovy</groupId>
                 <artifactId>groovy-groovysh</artifactId>
-                <version>4.0.9</version>
+                <version>4.0.32</version>
             </dependency>
 
             <dependency>

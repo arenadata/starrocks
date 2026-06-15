@@ -19,6 +19,7 @@ import com.starrocks.common.Config;
 import com.starrocks.common.DdlException;
 import com.starrocks.common.ErrorCode;
 import com.starrocks.common.Pair;
+import com.starrocks.common.util.NetUtils;
 import com.starrocks.lake.StarOSAgent;
 import com.starrocks.persist.DropComputeNodeLog;
 import com.starrocks.persist.EditLog;
@@ -37,13 +38,12 @@ import mockit.Expectations;
 import mockit.Mock;
 import mockit.MockUp;
 import mockit.Mocked;
+import org.apache.commons.validator.routines.InetAddressValidator;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -625,20 +625,14 @@ public class SystemInfoServiceTest {
         Assertions.assertTrue(beIP == null);
     }
 
-    @Mocked
-    InetAddress addr;
-
     private void mockNet() {
-        new MockUp<InetAddress>() {
+        new MockUp<NetUtils>() {
             @Mock
-            public InetAddress getByName(String host) throws UnknownHostException {
-                return addr;
-            }
-        };
-        new Expectations() {
-            {
-                addr.getHostAddress();
-                result = "127.0.0.1";
+            public Pair<String, String> getIpAndFqdnByHost(String host) {
+                if (InetAddressValidator.getInstance().isValid(host)) {
+                    return new Pair<>(host, "");
+                }
+                return new Pair<>("127.0.0.1", host);
             }
         };
     }

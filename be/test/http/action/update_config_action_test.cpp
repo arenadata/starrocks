@@ -93,7 +93,7 @@ TEST_F(UpdateConfigActionTest, test_update_number_tablet_writer_threads) {
     {
         auto st = action.update_config("number_tablet_writer_threads", "0");
         CHECK_OK(st);
-        ASSERT_EQ(CpuInfo::num_cores() / 2, pool->max_threads());
+        ASSERT_EQ(std::max<int>(CpuInfo::num_cores() / 2, 16), pool->max_threads());
     }
 }
 

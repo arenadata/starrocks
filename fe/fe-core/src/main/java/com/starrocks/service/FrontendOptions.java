@@ -150,8 +150,8 @@ public class FrontendOptions {
         if (PRIORITY_CIDRS.isEmpty()) {
             // Get FQDN from local host by default.
             try {
-                InetAddress localHost = InetAddress.getLocalHost();
-                fqdn = localHost.getCanonicalHostName();
+                InetAddress localHost = NetUtils.getLocalHost();
+                fqdn = NetUtils.getCanonicalHostName(localHost);
                 String ip = localHost.getHostAddress();
                 LOG.info("Get FQDN from local host by default, FQDN: {}, ip: {}, v6: {}", fqdn, ip,
                         localHost instanceof Inet6Address);
@@ -166,7 +166,7 @@ public class FrontendOptions {
             // Try to resolve addr from FQDN
             InetAddress uncheckedInetAddress = null;
             try {
-                uncheckedInetAddress = InetAddress.getByName(fqdn);
+                uncheckedInetAddress = NetUtils.getByName(fqdn);
             } catch (UnknownHostException e) {
                 LOG.error("failed to parse FQDN: {}, message: {}", fqdn, e.getMessage(), e);
                 System.exit(-1);
@@ -179,9 +179,9 @@ public class FrontendOptions {
             boolean hasInetAddr = false;
             for (InetAddress addr : addrs) {
                 LOG.info("Try to match addr in fqdn mode, ip: {}, FQDN: {}",
-                        addr.getHostAddress(), addr.getCanonicalHostName());
-                if (addr.getCanonicalHostName()
-                        .equals(uncheckedInetAddress.getCanonicalHostName())) {
+                        addr.getHostAddress(), NetUtils.getCanonicalHostName(addr));
+                if (NetUtils.getCanonicalHostName(addr)
+                        .equals(NetUtils.getCanonicalHostName(uncheckedInetAddress))) {
                     hasInetAddr = true;
                     break;
                 }
@@ -189,7 +189,7 @@ public class FrontendOptions {
             if (hasInetAddr) {
                 localAddr = uncheckedInetAddress;
                 LOG.info("Using FQDN from local host by default, FQDN: {}, ip: {}, v6: {}",
-                        localAddr.getCanonicalHostName(),
+                        NetUtils.getCanonicalHostName(localAddr),
                         localAddr.getHostAddress(),
                         localAddr instanceof Inet6Address);
             } else {
@@ -200,7 +200,7 @@ public class FrontendOptions {
             LOG.info("using priority_networks in fqdn mode to decide whether ipv6 or ipv4 is preferred");
             for (InetAddress addr : addrs) {
                 String hostAddr = addr.getHostAddress();
-                String canonicalHostName = addr.getCanonicalHostName();
+                String canonicalHostName = NetUtils.getCanonicalHostName(addr);
                 LOG.info("Try to match addr in fqdn mode, ip: {}, FQDN: {}", hostAddr, canonicalHostName);
                 if (isInPriorNetwork(hostAddr)) {
                     localAddr = addr;
@@ -218,7 +218,7 @@ public class FrontendOptions {
         }
 
         // double-check the reverse resolve
-        String canonicalHostName = localAddr.getCanonicalHostName();
+        String canonicalHostName = NetUtils.getCanonicalHostName(localAddr);
         if (!canonicalHostName.equals(fqdn)) {
             LOG.error("The FQDN of the parsed address [{}] is not the same as " + 
                     "the FQDN obtained from the host [{}]", canonicalHostName, fqdn);
@@ -300,7 +300,7 @@ public class FrontendOptions {
 
     public static String getLocalHostAddress() {
         if (useFqdn) {
-            return localAddr.getCanonicalHostName();
+            return NetUtils.getCanonicalHostName(localAddr);
         }
         return InetAddresses.toAddrString(localAddr);
     }

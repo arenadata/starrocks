@@ -53,7 +53,6 @@ import java.lang.reflect.Modifier;
 import java.lang.reflect.Parameter;
 import java.net.URLClassLoader;
 import java.security.MessageDigest;
-import java.security.Permission;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -159,32 +158,27 @@ public class CreateFunctionAnalyzer {
         JavaUDFInternalClass handleClass = new JavaUDFInternalClass();
         JavaUDFInternalClass stateClass = new JavaUDFInternalClass();
 
-        try {
-            try (URLClassLoader classLoader = UDFInternalClassLoader.create(objectFile, cloudConfiguration)) {
-                System.setSecurityManager(new UDFSecurityManager(UDFInternalClassLoader.class));
-                handleClass.setClazz(classLoader.loadClass(className));
-                handleClass.collectMethods();
+        try (URLClassLoader classLoader = UDFInternalClassLoader.create(objectFile, cloudConfiguration)) {
+            handleClass.setClazz(classLoader.loadClass(className));
+            handleClass.collectMethods();
 
-                if (stmt.isAggregate()) {
-                    String stateClassName = className + "$" + CreateFunctionStmt.STATE_CLASS_NAME;
-                    stateClass.setClazz(classLoader.loadClass(stateClassName));
-                    stateClass.collectMethods();
-                }
-
-            } catch (IOException e) {
-                ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
-                        "Failed to load object_file: " + stmt.getProperties().get(CreateFunctionStmt.FILE_KEY) + 
-                        "," + e.getMessage());
-            } catch (ClassNotFoundException e) {
-                ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
-                        "Class '" + className + "' not found in object_file :" +
-                                stmt.getProperties().get(CreateFunctionStmt.FILE_KEY) + "," + e.getMessage());
-            } catch (Exception e) {
-                ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
-                        "other exception when load class. exception:" + e.getMessage());
+            if (stmt.isAggregate()) {
+                String stateClassName = className + "$" + CreateFunctionStmt.STATE_CLASS_NAME;
+                stateClass.setClazz(classLoader.loadClass(stateClassName));
+                stateClass.collectMethods();
             }
-        } finally {
-            System.setSecurityManager(null);
+
+        } catch (IOException e) {
+            ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
+                    "Failed to load object_file: " + stmt.getProperties().get(CreateFunctionStmt.FILE_KEY) +
+                    "," + e.getMessage());
+        } catch (ClassNotFoundException e) {
+            ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
+                    "Class '" + className + "' not found in object_file :" +
+                            stmt.getProperties().get(CreateFunctionStmt.FILE_KEY) + "," + e.getMessage());
+        } catch (Exception e) {
+            ErrorReport.reportSemanticException(ErrorCode.ERR_COMMON_ERROR,
+                    "other exception when load class. exception:" + e.getMessage());
         }
 
         Function createdFunction = null;
@@ -386,40 +380,6 @@ public class CreateFunctionAnalyzer {
                     .build();
     private static final Class<?> JAVA_ARRAY_CLASS_TYPE = List.class;
     private static final Class<?> JAVA_MAP_CLASS_TYPE = Map.class;
-
-    private static class UDFSecurityManager extends SecurityManager {
-        private Class<?> clazz;
-
-        public UDFSecurityManager(Class<?> clazz) {
-            this.clazz = clazz;
-        }
-
-        @Override
-        public void checkPermission(Permission perm) {
-            if (isCreateFromUDFClassLoader()) {
-                super.checkPermission(perm);
-            }
-        }
-
-        public void checkPermission(Permission perm, Object context) {
-            if (isCreateFromUDFClassLoader()) {
-                super.checkPermission(perm, context);
-            }
-        }
-
-        private boolean isCreateFromUDFClassLoader() {
-            Class<?>[] classContext = getClassContext();
-            if (classContext.length >= 2) {
-                for (int i = 1; i < classContext.length; i++) {
-                    if (classContext[i].getClassLoader() != null &&
-                            clazz.equals(classContext[i].getClassLoader().getClass())) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        }
-    }
 
     public static class JavaUDFInternalClass {
         public Class<?> clazz = null;

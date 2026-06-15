@@ -34,13 +34,6 @@ public class UDFClassLoader extends URLClassLoader {
 
     public UDFClassLoader(String udfPath) throws IOException {
         super(new URL[] {new URL("file://" + udfPath)});
-        if (System.getSecurityManager() == null && System.getProperties().get("java.security.policy") != null) {
-            synchronized (UDFClassLoader.class) {
-                if (System.getSecurityManager() == null) {
-                    System.setSecurityManager(new UDFSecurityManager(UDFClassLoader.class));
-                }
-            }
-        }
     }
 
     @Override

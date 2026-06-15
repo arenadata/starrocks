@@ -18,6 +18,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.starrocks.common.AnalysisException;
 import com.starrocks.common.Pair;
+import com.starrocks.common.util.NetUtils;
 import com.starrocks.common.util.PropertyAnalyzer;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.service.FrontendOptions;
@@ -40,7 +41,6 @@ import com.starrocks.sql.ast.ModifyFrontendAddressClause;
 import com.starrocks.system.SystemInfoService;
 import org.apache.commons.validator.routines.InetAddressValidator;
 
-import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -163,10 +163,10 @@ public class AlterSystemStmtAnalyzer implements AstVisitor<Void, ConnectContext>
             }
             // Can't get an ip through the srcHost/destHost, will throw UnknownHostException
             if (!srcHostIsIP) {
-                InetAddress.getByName(srcHost);
+                NetUtils.getByName(srcHost);
             }
             if (!destHostIsIP) {
-                InetAddress.getByName(destHost);
+                NetUtils.getByName(destHost);
             }
         } catch (UnknownHostException e) {
             throw new SemanticException("unknown host " + e.getMessage());

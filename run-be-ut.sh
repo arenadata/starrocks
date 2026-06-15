@@ -168,6 +168,10 @@ if [[ -z ${USE_AVX512} ]]; then
 fi
 echo "Build Backend UT"
 
+if [ -z "${STARROCKS_LINKER}" ] && command -v ld.lld >/dev/null 2>&1; then
+    export STARROCKS_LINKER=lld
+fi
+
 CMAKE_BUILD_DIR=${STARROCKS_HOME}/be/ut_build_${CMAKE_BUILD_TYPE}
 if [ ${CLEAN} -eq 1 ]; then
     rm ${CMAKE_BUILD_DIR} -rf
@@ -238,7 +242,16 @@ echo "*********************************"
 echo "  Starting to Run BE Unit Tests  "
 echo "*********************************"
 
+if [ $(ulimit -n) != "unlimited" ] && [ $(ulimit -n) -lt 60000 ]; then
+    ulimit -n 65535
+    if [ $? -ne 0 ]; then
+        echo "Warn: update max open files failed, storage engine requires at least 60000 (ulimit -n)"
+    fi
+fi
+
 export TERM=xterm
+export TMPDIR=${CMAKE_BUILD_DIR}/ut_tmp
+mkdir -p ${TMPDIR}
 export UDF_RUNTIME_DIR=${STARROCKS_HOME}/lib/udf-runtime
 export LOG_DIR=${STARROCKS_HOME}/log
 export LSAN_OPTIONS=suppressions=${STARROCKS_HOME}/conf/asan_suppressions.conf
@@ -300,7 +313,7 @@ export CLASSPATH=${STARROCKS_HOME}/java-extensions/java-utils/target/*:$CLASSPAT
 
 # ===========================================================
 
-export ASAN_OPTIONS="abort_on_error=1:disable_coredump=0:unmap_shadow_on_exit=1:detect_stack_use_after_return=1"
+export ASAN_OPTIONS="abort_on_error=1:disable_coredump=1:unmap_shadow_on_exit=1:detect_stack_use_after_return=1"
 
 if [ $WITH_AWS = "OFF" ]; then
     append_negative_case "*S3*"
@@ -329,6 +342,13 @@ test_files=`find ${STARROCKS_TEST_BINARY_DIR} -type f -perm -111 -name "*test" \
 echo "[INFO] gtest_filter: $TEST_NAME"
 # run cases in starrocks_test in parallel if has gtest-parallel script.
 # reference: https://github.com/google/gtest-parallel
+GTEST_PARALLEL=${GTEST_PARALLEL:-${STARROCKS_HOME}/be/build-support/gtest_parallel.py}
+_be_ut_cores=$(nproc 2>/dev/null || echo 4)
+_be_ut_mem_gb=$(awk '/MemTotal/{print int($2/1024/1024)}' /proc/meminfo 2>/dev/null || echo 8)
+_be_ut_workers=$(( _be_ut_mem_gb / 4 ))
+[ ${_be_ut_workers} -gt ${_be_ut_cores} ] && _be_ut_workers=${_be_ut_cores}
+[ ${_be_ut_workers} -lt 1 ] && _be_ut_workers=1
+GTEST_PARALLEL_OPTIONS=${GTEST_PARALLEL_OPTIONS:--w ${_be_ut_workers} --timeout_per_test 600}
 if [[ $TEST_MODULE == '.*'  || $TEST_MODULE == 'starrocks_test' ]]; then
   echo "Run test: ${STARROCKS_TEST_BINARY_DIR}/starrocks_test"
   if [ ${DRY_RUN} -eq 0 ]; then

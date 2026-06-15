@@ -37,6 +37,10 @@ public:
         expr_node.type = gen_type_desc(TPrimitiveType::INT);
         engine = JITEngine::get_instance();
         engine->init();
+        auto* cache = engine->get_callable_cache();
+        auto capacity = cache->get_capacity();
+        cache->set_capacity(0);
+        cache->set_capacity(capacity);
     }
 
 public:
