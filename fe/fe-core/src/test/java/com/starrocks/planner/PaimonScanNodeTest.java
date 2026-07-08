@@ -22,6 +22,7 @@ import com.starrocks.credential.CloudConfigurationFactory;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.thrift.THdfsFileFormat;
+import com.starrocks.thrift.TPaimonReaderType;
 import com.starrocks.thrift.TScanRangeLocations;
 import com.starrocks.type.IntegerType;
 import com.starrocks.type.StringType;
@@ -152,9 +153,10 @@ public class PaimonScanNodeTest {
         desc.setTable(table);
         PaimonScanNode scanNode = new PaimonScanNode(new PlanNodeId(0), desc, "XXX");
         DeletionFile deletionFile = new DeletionFile("dummy", 1, 22, 0L);
-        scanNode.splitRawFileScanRangeLocations(rawFile, deletionFile);
-        scanNode.splitScanRangeLocations(rawFile, 0, 256 * 1024 * 1024, 64 * 1024 * 1024, null);
-        scanNode.addSplitScanRangeLocations(split, null, 256 * 1024 * 1024);
+        scanNode.splitRawFileScanRangeLocations(rawFile, deletionFile, TPaimonReaderType.NATIVE);
+        scanNode.splitScanRangeLocations(rawFile, 0, 256 * 1024 * 1024, 64 * 1024 * 1024,
+                null, TPaimonReaderType.NATIVE);
+        scanNode.addSplitScanRangeLocations(split, null, 256 * 1024 * 1024, TPaimonReaderType.JNI);
         Assertions.assertEquals(6, scanNode.getScanRangeLocations(10).size());
     }
 
@@ -181,7 +183,7 @@ public class PaimonScanNodeTest {
         TupleDescriptor desc = new TupleDescriptor(new TupleId(0));
         desc.setTable(table);
         PaimonScanNode scanNode = new PaimonScanNode(new PlanNodeId(0), desc, "XXX");
-        scanNode.addSplitScanRangeLocations(split, null, 256 * 1024 * 1024);
+        scanNode.addSplitScanRangeLocations(split, null, 256 * 1024 * 1024, TPaimonReaderType.JNI);
         Assertions.assertEquals(1, scanNode.getScanRangeLocations(10).size());
         TScanRangeLocations tScanRangeLocations = scanNode.getScanRangeLocations(10).get(0);
         Assertions.assertEquals(THdfsFileFormat.UNKNOWN, tScanRangeLocations.getScan_range().getHdfs_scan_range().getFile_format());
@@ -208,7 +210,7 @@ public class PaimonScanNodeTest {
         };
         desc.setTable(table);
         PaimonScanNode scanNode = new PaimonScanNode(new PlanNodeId(0), desc, "XXX");
-        scanNode.splitRawFileScanRangeLocations(rawFile, null);
+        scanNode.splitRawFileScanRangeLocations(rawFile, null, TPaimonReaderType.NATIVE);
         Assertions.assertEquals(2, scanNode.getScanRangeLocations(10).size());
     }
 }

@@ -49,10 +49,14 @@ import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.server.MetadataMgr;
 import com.starrocks.server.NodeMgr;
 import com.starrocks.sql.analyzer.AstToStringBuilder;
+import com.starrocks.sql.ast.AlterClause;
+import com.starrocks.sql.ast.AlterTableStmt;
 import com.starrocks.sql.ast.ColWithComment;
+import com.starrocks.sql.ast.CreateTableStmt;
 import com.starrocks.sql.ast.CreateViewStmt;
 import com.starrocks.sql.ast.DropTableStmt;
 import com.starrocks.sql.ast.KeyPartitionRef;
+import com.starrocks.sql.ast.ModifyTablePropertiesClause;
 import com.starrocks.sql.ast.QualifiedName;
 import com.starrocks.sql.ast.TableRef;
 import com.starrocks.sql.ast.TruncateTablePartitionStmt;
@@ -76,6 +80,8 @@ import com.starrocks.sql.optimizer.rule.transformation.ExternalScanPartitionPrun
 import com.starrocks.sql.optimizer.statistics.ColumnStatistic;
 import com.starrocks.sql.parser.NodePosition;
 import com.starrocks.system.Frontend;
+import com.starrocks.thrift.TPaimonFileInfo;
+import com.starrocks.thrift.TSinkCommitInfo;
 import com.starrocks.type.ArrayType;
 import com.starrocks.type.DateType;
 import com.starrocks.type.FloatType;
@@ -1916,5 +1922,108 @@ public class PaimonMetadataTest {
             }
         };
         org.junit.jupiter.api.Assertions.assertThrows(DdlException.class, () -> metadata.dropTable(connectContext, dropStmt));
+    }
+
+    @Test
+    public void testCreateAndDropDb() throws Exception {
+        connectContext.getSessionVariable().setEnablePaimonDdl(true);
+        new Expectations() {
+            {
+                paimonNativeCatalog.listDatabases();
+                result = Collections.emptyList();
+
+                paimonNativeCatalog.createDatabase("new_db", false, (Map<String, String>) any);
+                times = 1;
+
+                paimonNativeCatalog.listTables("new_db");
+                result = Collections.emptyList();
+                paimonNativeCatalog.listViews("new_db");
+                result = Collections.emptyList();
+
+                paimonNativeCatalog.dropDatabase("new_db", false, false);
+                times = 1;
+            }
+        };
+
+        metadata.createDb(connectContext, "new_db", Collections.singletonMap("k", "v"));
+        metadata.dropDb(connectContext, "new_db", false);
+    }
+
+    @Test
+    public void testCreateTable(@Mocked CreateTableStmt stmt) throws Exception {
+        connectContext.getSessionVariable().setEnablePaimonDdl(true);
+        List<Column> columns = Lists.newArrayList(new Column("k1", INT), new Column("v1", VARCHAR));
+        Map<String, String> properties = new HashMap<>();
+        properties.put("file.format", "parquet");
+        properties.put("bucket", "1");
+        new Expectations() {
+            {
+                stmt.getColumns();
+                result = columns;
+                stmt.getPartitionDesc();
+                result = null;
+                stmt.getKeysDesc();
+                result = null;
+                stmt.getProperties();
+                result = properties;
+                stmt.getComment();
+                result = "";
+                stmt.getDbName();
+                result = "db1";
+                stmt.getTableName();
+                result = "tbl1";
+                stmt.isSetIfNotExists();
+                result = false;
+
+                paimonNativeCatalog.createTable((Identifier) any, (Schema) any, false);
+                times = 1;
+            }
+        };
+
+        assertTrue(metadata.createTable(connectContext, stmt));
+    }
+
+    @Test
+    public void testAlterTableWithProperties(@Mocked AlterTableStmt stmt) throws Exception {
+        connectContext.getSessionVariable().setEnablePaimonDdl(true);
+        Map<String, String> properties = new HashMap<>();
+        properties.put("bucket", "8");
+        List<AlterClause> clauses = Lists.newArrayList(new ModifyTablePropertiesClause(properties));
+
+        new Expectations() {
+            {
+                stmt.getDbName();
+                result = "db1";
+                stmt.getTableName();
+                result = "tbl1";
+                stmt.getAlterClauseList();
+                result = clauses;
+
+                paimonNativeCatalog.alterTable((Identifier) any, (List<org.apache.paimon.schema.SchemaChange>) any, false);
+                times = 1;
+            }
+        };
+
+        metadata.alterTable(connectContext, stmt);
+    }
+
+    @Test
+    public void testFinishSinkInvalidateTable() {
+        TPaimonFileInfo paimonFileInfo = new TPaimonFileInfo();
+        paimonFileInfo.setFile_name("part-0001.orc");
+        paimonFileInfo.setPartition_path("file:///tmp/staging");
+        paimonFileInfo.setRecord_count(10L);
+        paimonFileInfo.setFile_size_in_bytes(128L);
+        TSinkCommitInfo sinkCommitInfo = new TSinkCommitInfo();
+        sinkCommitInfo.setPaimon_file_info(paimonFileInfo);
+
+        new Expectations() {
+            {
+                paimonNativeCatalog.invalidateTable(new Identifier("db1", "tbl1"));
+                times = 1;
+            }
+        };
+
+        metadata.finishSink("db1", "tbl1", Lists.newArrayList(sinkCommitInfo), null);
     }
 }

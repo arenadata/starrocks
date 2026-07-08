@@ -125,6 +125,7 @@ import com.starrocks.planner.IcebergRowDeltaSink;
 import com.starrocks.planner.IcebergScanNode;
 import com.starrocks.planner.IcebergTableSink;
 import com.starrocks.planner.OlapScanNode;
+import com.starrocks.planner.PaimonTableSink;
 import com.starrocks.planner.PlanFragment;
 import com.starrocks.planner.PlanNodeId;
 import com.starrocks.planner.ScanNode;
@@ -3285,7 +3286,7 @@ public class StmtExecutor {
         }
 
         if (dmlType == DmlType.INSERT_OVERWRITE && !((InsertStmt) parsedStmt).hasOverwriteJob() &&
-                !(targetTable.isIcebergTable() || targetTable.isHiveTable())) {
+                !(targetTable.isIcebergTable() || targetTable.isHiveTable() || targetTable.isPaimonTable())) {
             handleInsertOverwrite((InsertStmt) parsedStmt);
             return;
         }
@@ -3355,7 +3356,8 @@ public class StmtExecutor {
 
             context.setStatisticsJob(AnalyzerUtils.isStatisticsJob(context, parsedStmt));
             InsertLoadJob loadJob = null;
-            if (!(targetTable.isIcebergTable() || targetTable.isHiveTable() || targetTable.isTableFunctionTable() ||
+            if (!(targetTable.isIcebergTable() || targetTable.isHiveTable() || targetTable.isPaimonTable()
+                    || targetTable.isTableFunctionTable() ||
                     targetTable.isBlackHoleTable())) {
                 InsertLoadTxnCallback insertLoadTxnCallback =
                         InsertLoadTxnCallbackFactory.of(context, database.getId(), targetTable);
@@ -3471,7 +3473,7 @@ public class StmtExecutor {
                             coord == null ? Collections.emptyList() : coord.getCommitInfos(),
                             coord == null ? Collections.emptyList() : coord.getFailInfos());
                 } else if (targetTable instanceof SystemTable || targetTable.isHiveTable() ||
-                        targetTable.isIcebergTable() ||
+                        targetTable.isPaimonTable() || targetTable.isIcebergTable() ||
                         targetTable.isTableFunctionTable() || targetTable.isBlackHoleTable()) {
                     // schema table does not need txn
                 } else {
@@ -3493,7 +3495,7 @@ public class StmtExecutor {
                 GlobalTransactionMgr mgr = GlobalStateMgr.getCurrentState().getGlobalTransactionMgr();
                 if (!(targetTable instanceof ExternalOlapTable || targetTable instanceof OlapTable)) {
                     if (!(targetTable instanceof SystemTable || targetTable.isIcebergTable() ||
-                            targetTable.isHiveTable() || targetTable.isTableFunctionTable() ||
+                            targetTable.isHiveTable() || targetTable.isPaimonTable() || targetTable.isTableFunctionTable() ||
                             targetTable.isBlackHoleTable())) {
                         // schema table and iceberg table does not need txn
                         mgr.abortTransaction(database.getId(), transactionId, ERR_NO_ROWS_IMPORTED.formatErrorMsg(),
@@ -3578,6 +3580,23 @@ public class StmtExecutor {
                         .finishSink(catalogName, dbName, tableName, commitInfos, null);
                 txnStatus = TransactionStatus.VISIBLE;
                 label = "FAKE_HIVE_SINK_LABEL";
+            } else if (targetTable.isPaimonTable()) {
+                List<TSinkCommitInfo> commitInfos = coord.getSinkCommitInfos();
+                PaimonTableSink paimonTableSink = (PaimonTableSink) execPlan.getFragments().get(0).getSink();
+                String stagingDir = paimonTableSink.getStagingDir();
+                if (stmt instanceof InsertStmt) {
+                    InsertStmt insertStmt = (InsertStmt) stmt;
+                    for (TSinkCommitInfo commitInfo : commitInfos) {
+                        commitInfo.setStaging_dir(stagingDir);
+                        if (insertStmt.isOverwrite()) {
+                            commitInfo.setIs_overwrite(true);
+                        }
+                    }
+                }
+                context.getGlobalStateMgr().getMetadataMgr()
+                        .finishSink(catalogName, dbName, tableName, commitInfos, null);
+                txnStatus = TransactionStatus.VISIBLE;
+                label = "FAKE_PAIMON_SINK_LABEL";
             } else if (targetTable.isTableFunctionTable()) {
                 txnStatus = TransactionStatus.VISIBLE;
                 label = "FAKE_TABLE_FUNCTION_TABLE_SINK_LABEL";
@@ -3768,6 +3787,8 @@ public class StmtExecutor {
             connectorType = ConnectorMetricsMgr.CONNECTOR_ICEBERG;
         } else if (targetTable.isHiveTable()) {
             connectorType = ConnectorMetricsMgr.CONNECTOR_HIVE;
+        } else if (targetTable.isPaimonTable()) {
+            connectorType = ConnectorMetricsMgr.CONNECTOR_PAIMON;
         }
         if (connectorType == null) {
             return;

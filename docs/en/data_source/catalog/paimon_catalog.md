@@ -23,7 +23,29 @@ To ensure successful SQL workloads on your Paimon cluster, your StarRocks cluste
 
 ## Usage notes
 
-You can only use Paimon catalogs to query data. You cannot use Paimon catalogs to drop, delete, or insert data into your Paimon cluster.
+`SELECT` is available by default for Paimon catalogs.
+
+`INSERT/OVERWRITE` and core DDL are gradually rolled out behind feature flags in Milestone 1.
+
+### Feature flags and rollout phases
+
+Use the following session variables to control phased rollout:
+
+- `enable_paimon_cpp_reader` (default `false`): enables FE/BE planning and dispatch of the Paimon C++ reader path.
+- `enable_paimon_dml` (default `false`): enables `INSERT INTO` and `INSERT OVERWRITE` for Paimon tables.
+- `enable_paimon_ddl` (default `false`): enables Paimon metadata DDL (`CREATE/DROP DATABASE`, `CREATE TABLE`, selected `ALTER TABLE`).
+- `enable_paimon_row_level_dml` (default `false`): reserved for experimental row-level DML (`UPDATE/DELETE/MERGE`) follow-up work.
+
+Recommended rollout:
+
+1. Phase 1A: enable `enable_paimon_cpp_reader` for read-path validation.
+2. Phase 1B: enable `enable_paimon_dml` and `enable_paimon_ddl` after sink/metadata validation.
+3. Phase 1C: move `enable_paimon_cpp_reader` to default-on after parity and stability targets are met.
+
+Compatibility behavior:
+
+- If FE requests Paimon C++ reader but BE is built without `ENABLE_PAIMON_CPP`, StarRocks falls back to JNI reader.
+- Split-based planning keeps JNI fallback until native split scanner coverage is complete.
 
 ## Paimon to StarRocks data types
 

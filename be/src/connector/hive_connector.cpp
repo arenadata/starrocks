@@ -871,9 +871,20 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
         use_hudi_jni_reader = scan_range.use_hudi_jni_reader;
     }
     bool use_paimon_jni_reader = false;
-    if (scan_range.__isset.use_paimon_jni_reader) {
+    bool use_paimon_cpp_reader = false;
+    if (scan_range.__isset.paimon_reader_type) {
+        use_paimon_jni_reader = scan_range.paimon_reader_type == TPaimonReaderType::JNI;
+        use_paimon_cpp_reader = scan_range.paimon_reader_type == TPaimonReaderType::CPP;
+    } else if (scan_range.__isset.use_paimon_jni_reader) {
         use_paimon_jni_reader = scan_range.use_paimon_jni_reader;
     }
+#ifndef ENABLE_PAIMON_CPP
+    if (use_paimon_cpp_reader) {
+        // Compatibility fallback for mixed FE/BE rollout when BE is built without paimon-cpp.
+        use_paimon_jni_reader = true;
+        use_paimon_cpp_reader = false;
+    }
+#endif
     bool use_odps_jni_reader = false;
     if (scan_range.__isset.use_odps_jni_reader) {
         use_odps_jni_reader = scan_range.use_odps_jni_reader;
@@ -903,6 +914,9 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     } else if (_use_partition_column_value_only) {
         scanner = new HdfsPartitionScanner();
     } else if (use_paimon_jni_reader) {
+        scanner = create_paimon_jni_scanner(jni_scanner_create_options).release();
+    } else if (use_paimon_cpp_reader && format == THdfsFileFormat::UNKNOWN && scan_range.__isset.paimon_split_info) {
+        // Keep JNI fallback for split-based planning until native paimon-cpp split scanner is enabled in BE.
         scanner = create_paimon_jni_scanner(jni_scanner_create_options).release();
     } else if (use_hudi_jni_reader) {
         scanner = create_hudi_jni_scanner(jni_scanner_create_options).release();

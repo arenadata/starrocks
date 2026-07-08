@@ -1711,6 +1711,58 @@ build_benchgen() {
     ${CMAKE_CMD} --install build
 }
 
+# paimon-cpp
+build_paimon_cpp() {
+    check_if_source_exist "${PAIMON_CPP_SOURCE}"
+    cd "${TP_SOURCE_DIR}/${PAIMON_CPP_SOURCE}"
+
+    rm -rf "${BUILD_DIR}"
+    mkdir -p "${BUILD_DIR}"
+    cd "${BUILD_DIR}"
+
+    local paimon_linker_flags="-L${TP_LIB_DIR} -lbrotlienc -lbrotlidec -lbrotlicommon -llzma"
+
+    CXXFLAGS="-Wno-nontrivial-memcall" \
+    ${CMAKE_CMD} -C "${TP_DIR}/paimon-cpp-cache.cmake" \
+        -G "${CMAKE_GENERATOR}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
+        -DCMAKE_CXX_STANDARD=17 \
+        -DPAIMON_BUILD_SHARED=OFF \
+        -DPAIMON_BUILD_STATIC=ON \
+        -DPAIMON_BUILD_TESTS=OFF \
+        -DPAIMON_ENABLE_ORC=ON \
+        -DPAIMON_ENABLE_AVRO=OFF \
+        -DPAIMON_ENABLE_LANCE=OFF \
+        -DPAIMON_ENABLE_JINDO=OFF \
+        -DPAIMON_ENABLE_LUMINA=OFF \
+        -DPAIMON_ENABLE_LUCENE=OFF \
+        -DCMAKE_EXE_LINKER_FLAGS="${paimon_linker_flags}" \
+        -DCMAKE_SHARED_LINKER_FLAGS="${paimon_linker_flags}" \
+        ..
+    ${BUILD_SYSTEM} -j "${PARALLEL}"
+    ${BUILD_SYSTEM} install
+
+    mkdir -p "${TP_INSTALL_DIR}/lib64"
+
+    # Install paimon-cpp internal dependencies with renamed names to avoid symbol conflicts.
+    if [ -f "release/libroaring_bitmap.a" ]; then
+        cp -f "release/libroaring_bitmap.a" "${TP_INSTALL_DIR}/lib64/libroaring_bitmap_paimon.a"
+    fi
+
+    if [ -f "release/libxxhash.a" ]; then
+        cp -f "release/libxxhash.a" "${TP_INSTALL_DIR}/lib64/libxxhash_paimon.a"
+    fi
+
+    if [ -f "fmt_ep-install/lib/libfmt.a" ]; then
+        cp -f "fmt_ep-install/lib/libfmt.a" "${TP_INSTALL_DIR}/lib64/libfmt_paimon.a"
+    fi
+
+    if [ -f "tbb_ep-install/lib/libtbb.a" ]; then
+        cp -f "tbb_ep-install/lib/libtbb.a" "${TP_INSTALL_DIR}/lib64/libtbb_paimon.a"
+    fi
+}
+
 # restore cxxflags/cppflags/cflags to default one
 restore_compile_flags() {
     # c preprocessor flags

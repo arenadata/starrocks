@@ -32,6 +32,7 @@ public class ConnectorMetricsMgr {
     // Connector type constants
     public static final String CONNECTOR_ICEBERG = "iceberg";
     public static final String CONNECTOR_HIVE = "hive";
+    public static final String CONNECTOR_PAIMON = "paimon";
 
     /**
      * Per-connector metrics holder. Each connector type gets an isolated set of metric maps.

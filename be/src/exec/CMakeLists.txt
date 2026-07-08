@@ -474,6 +474,7 @@ set(EXEC_DATA_SINK_FILES
     data_sinks/multi_olap_table_sink.cpp
     data_sinks/mysql_result_writer.cpp
     data_sinks/mysql_table_sink.cpp
+    data_sinks/paimon_table_sink.cpp
     data_sinks/mysql_table_writer.cpp
     data_sinks/range_router.cpp
     data_sinks/range_tablet_sink_sender.cpp

@@ -71,6 +71,7 @@ starrocks_set_default_packages() {
         jemalloc
         brotli
         arrow
+        paimon_cpp
         librdkafka
         pulsar
         s2

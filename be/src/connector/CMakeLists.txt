@@ -45,6 +45,7 @@ ADD_BE_LIB(Connector
         connector_chunk_sink.cpp
         file_chunk_sink.cpp
         hive_chunk_sink.cpp
+        paimon_chunk_sink.cpp
         iceberg_chunk_sink.cpp
         utils.cpp
         async_flush_stream_poller.cpp

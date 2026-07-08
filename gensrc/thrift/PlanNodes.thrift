@@ -341,6 +341,13 @@ struct TPaimonDeletionFile {
     3: optional i64 length
 }
 
+enum TPaimonReaderType {
+    UNKNOWN = 0,
+    JNI = 1,
+    NATIVE = 2,
+    CPP = 3
+}
+
 // refer to https://github.com/delta-io/delta/blob/master/PROTOCOL.md#deletion-vector-descriptor-schema
 struct TDeletionVectorDescriptor {
   1: optional string storageType
@@ -461,6 +468,9 @@ struct THdfsScanRange {
 
     // whether to use JNI scanner to read Avro data (default: false = use native C++ scanner)
     38: optional bool use_avro_jni_reader
+
+    // paimon reader selection (fallbacks to use_paimon_jni_reader when unset)
+    39: optional TPaimonReaderType paimon_reader_type
 }
 
 struct TBinlogScanRange {

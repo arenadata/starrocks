@@ -454,6 +454,52 @@ set_target_properties(azure-storage-files-datalake PROPERTIES IMPORTED_LOCATION 
 add_library(benchgen STATIC IMPORTED GLOBAL)
 set_target_properties(benchgen PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libbenchgen.a)
 
+if (ENABLE_PAIMON_CPP)
+    starrocks_resolve_thirdparty_library(PAIMON_LIBRARY libpaimon.a)
+    add_library(paimon STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon PROPERTIES IMPORTED_LOCATION ${PAIMON_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(PAIMON_PARQUET_FILE_FORMAT_LIBRARY libpaimon_parquet_file_format.a)
+    add_library(paimon_parquet_file_format STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon_parquet_file_format PROPERTIES IMPORTED_LOCATION ${PAIMON_PARQUET_FILE_FORMAT_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(PAIMON_ORC_FILE_FORMAT_LIBRARY libpaimon_orc_file_format.a)
+    add_library(paimon_orc_file_format STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon_orc_file_format PROPERTIES IMPORTED_LOCATION ${PAIMON_ORC_FILE_FORMAT_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(PAIMON_BLOB_FILE_FORMAT_LIBRARY libpaimon_blob_file_format.a)
+    add_library(paimon_blob_file_format STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon_blob_file_format PROPERTIES IMPORTED_LOCATION ${PAIMON_BLOB_FILE_FORMAT_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(PAIMON_LOCAL_FILE_SYSTEM_LIBRARY libpaimon_local_file_system.a)
+    add_library(paimon_local_file_system STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon_local_file_system PROPERTIES IMPORTED_LOCATION ${PAIMON_LOCAL_FILE_SYSTEM_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(PAIMON_FILE_INDEX_LIBRARY libpaimon_file_index.a)
+    add_library(paimon_file_index STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon_file_index PROPERTIES IMPORTED_LOCATION ${PAIMON_FILE_INDEX_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(PAIMON_GLOBAL_INDEX_LIBRARY libpaimon_global_index.a)
+    add_library(paimon_global_index STATIC IMPORTED GLOBAL)
+    set_target_properties(paimon_global_index PROPERTIES IMPORTED_LOCATION ${PAIMON_GLOBAL_INDEX_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(ROARING_BITMAP_PAIMON_LIBRARY libroaring_bitmap_paimon.a)
+    add_library(roaring_bitmap_paimon STATIC IMPORTED GLOBAL)
+    set_target_properties(roaring_bitmap_paimon PROPERTIES IMPORTED_LOCATION ${ROARING_BITMAP_PAIMON_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(XXHASH_PAIMON_LIBRARY libxxhash_paimon.a)
+    add_library(xxhash_paimon STATIC IMPORTED GLOBAL)
+    set_target_properties(xxhash_paimon PROPERTIES IMPORTED_LOCATION ${XXHASH_PAIMON_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(FMT_PAIMON_LIBRARY libfmt_paimon.a)
+    add_library(fmt_paimon STATIC IMPORTED GLOBAL)
+    set_target_properties(fmt_paimon PROPERTIES IMPORTED_LOCATION ${FMT_PAIMON_LIBRARY})
+
+    starrocks_resolve_thirdparty_library(TBB_PAIMON_LIBRARY libtbb_paimon.a)
+    add_library(tbb_paimon STATIC IMPORTED GLOBAL)
+    set_target_properties(tbb_paimon PROPERTIES IMPORTED_LOCATION ${TBB_PAIMON_LIBRARY})
+endif()
+
 set(absl_DIR "${THIRDPARTY_DIR}/lib/cmake/absl" CACHE PATH "absl search path" FORCE)
 find_package(absl CONFIG REQUIRED)
 

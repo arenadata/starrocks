@@ -843,9 +843,14 @@ public class InsertAnalyzer {
                     tableName, tableName);
         }
 
+        if (table.isPaimonTable() && !session.getSessionVariable().getEnablePaimonDml()) {
+            throw unsupportedException("Paimon INSERT/OVERWRITE is disabled. Set enable_paimon_dml=true to enable it");
+        }
+
         if (insertStmt.isOverwrite()) {
-            if (!(table instanceof OlapTable) && !table.isIcebergTable() && !table.isHiveTable()) {
-                throw unsupportedException("Only support insert overwrite olap/iceberg/hive table");
+            if (!(table instanceof OlapTable) && !table.isIcebergTable() && !table.isHiveTable()
+                    && !table.isPaimonTable()) {
+                throw unsupportedException("Only support insert overwrite olap/iceberg/hive/paimon table");
             }
             if (table instanceof OlapTable && ((OlapTable) table).getState() != NORMAL) {
                 String msg =
@@ -856,11 +861,11 @@ public class InsertAnalyzer {
         }
 
         if (!table.supportInsert()) {
-            if (table.isIcebergTable() || table.isHiveTable()) {
+            if (table.isIcebergTable() || table.isHiveTable() || table.isPaimonTable()) {
                 throw unsupportedException(String.format("Only support insert into %s table with parquet file format",
                         table.getType()));
             }
-            throw unsupportedException("Only support insert into olap/mysql/iceberg/hive table");
+            throw unsupportedException("Only support insert into olap/mysql/iceberg/hive/paimon table");
         }
 
         if ((table.isHiveTable() || table.isIcebergTable()) && CatalogMgr.isInternalCatalog(catalogName)) {

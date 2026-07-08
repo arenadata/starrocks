@@ -34,6 +34,7 @@
 #include "exec/data_sinks/multi_cast_data_stream_sink.h"
 #include "exec/data_sinks/mysql_table_sink.h"
 #include "exec/data_sinks/noop_sink.h"
+#include "exec/data_sinks/paimon_table_sink.h"
 #include "exec/data_sinks/result_sink.h"
 #include "exec/data_sinks/schema_table_sink.h"
 #include "exec/data_sinks/table_function_table_sink.h"
@@ -172,6 +173,13 @@ Status DataSink::create_data_sink(RuntimeState* state, const TDataSink& thrift_s
             return Status::InternalError("Missing hive table sink");
         }
         *sink = std::make_unique<HiveTableSink>(state->obj_pool(), output_exprs);
+        break;
+    }
+    case TDataSinkType::PAIMON_TABLE_SINK: {
+        if (!thrift_sink.__isset.paimon_table_sink) {
+            return Status::InternalError("Missing paimon table sink");
+        }
+        *sink = std::make_unique<PaimonTableSink>(state->obj_pool(), output_exprs);
         break;
     }
     case TDataSinkType::TABLE_FUNCTION_TABLE_SINK: {

@@ -1,0 +1,17 @@
+-- name: testPaimonDmlRolloutFlags
+select @@enable_paimon_dml;
+set enable_paimon_dml = true;
+select @@enable_paimon_dml;
+
+select @@enable_paimon_row_level_dml;
+set enable_paimon_row_level_dml = true;
+select @@enable_paimon_row_level_dml;
+
+set enable_paimon_row_level_dml = false;
+set enable_paimon_dml = false;
+
+-- name: testPaimonReaderRolloutFlag
+select @@enable_paimon_cpp_reader;
+set enable_paimon_cpp_reader = true;
+select @@enable_paimon_cpp_reader;
+set enable_paimon_cpp_reader = false;

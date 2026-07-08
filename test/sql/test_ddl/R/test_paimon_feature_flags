@@ -1,0 +1,15 @@
+-- name: testPaimonDdlRolloutFlag
+select @@enable_paimon_ddl;
+-- result:
+0
+-- !result
+set enable_paimon_ddl = true;
+-- result:
+-- !result
+select @@enable_paimon_ddl;
+-- result:
+1
+-- !result
+set enable_paimon_ddl = false;
+-- result:
+-- !result

@@ -63,6 +63,8 @@ import org.jetbrains.annotations.NotNull;
 import java.util.List;
 import java.util.Map;
 
+import static com.starrocks.sql.common.UnsupportedException.unsupportedException;
+
 public class DeleteAnalyzer {
     private static final Logger LOG = LogManager.getLogger(DeleteAnalyzer.class);
 
@@ -277,6 +279,14 @@ public class DeleteAnalyzer {
         if (table instanceof IcebergTable) {
             analyzeIcebergTable(deleteStatement, table, session);
             return;
+        }
+
+        if (table.isPaimonTable()) {
+            if (!session.getSessionVariable().getEnablePaimonRowLevelDml()) {
+                throw unsupportedException(
+                        "Paimon DELETE is disabled. Set enable_paimon_row_level_dml=true to enable experimental path");
+            }
+            throw unsupportedException("Paimon DELETE is not implemented yet");
         }
 
         if (table instanceof MaterializedView) {

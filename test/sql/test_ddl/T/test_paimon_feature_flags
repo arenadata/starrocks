@@ -1,0 +1,5 @@
+-- name: testPaimonDdlRolloutFlag
+select @@enable_paimon_ddl;
+set enable_paimon_ddl = true;
+select @@enable_paimon_ddl;
+set enable_paimon_ddl = false;

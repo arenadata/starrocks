@@ -234,6 +234,14 @@ public class UpdateAnalyzer {
             return;
         }
 
+        if (table.isPaimonTable()) {
+            if (!session.getSessionVariable().getEnablePaimonRowLevelDml()) {
+                throw unsupportedException(
+                        "Paimon UPDATE is disabled. Set enable_paimon_row_level_dml=true to enable experimental path");
+            }
+            throw unsupportedException("Paimon UPDATE is not implemented yet");
+        }
+
         if (!table.supportsUpdate()) {
             throw unsupportedException("table " + table.getName() + " does not support update");
         }

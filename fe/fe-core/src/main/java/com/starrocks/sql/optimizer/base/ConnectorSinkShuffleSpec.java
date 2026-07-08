@@ -16,6 +16,7 @@ package com.starrocks.sql.optimizer.base;
 
 import com.starrocks.catalog.HiveTable;
 import com.starrocks.catalog.IcebergTable;
+import com.starrocks.catalog.PaimonTable;
 import com.starrocks.catalog.Table;
 import com.starrocks.connector.ConnectorSinkShuffleMode;
 import com.starrocks.qe.SessionVariable;
@@ -48,7 +49,7 @@ import java.util.Optional;
  * </ul>
  *
  * <p>InsertPlanner dispatches via {@link #forTable(Table)}; non-eligible tables
- * (OlapTable, TableFunctionTable, Paimon, ...) return {@link Optional#empty()}
+ * (OlapTable, TableFunctionTable, ...) return {@link Optional#empty()}
  * and the planner falls back to its existing connector-specific code paths.
  */
 public interface ConnectorSinkShuffleSpec {
@@ -155,6 +156,9 @@ public interface ConnectorSinkShuffleSpec {
         }
         if (table instanceof HiveTable) {
             return Optional.of(new HiveSinkShuffleSpec((HiveTable) table));
+        }
+        if (table instanceof PaimonTable) {
+            return Optional.of(new PaimonSinkShuffleSpec((PaimonTable) table));
         }
         return Optional.empty();
     }

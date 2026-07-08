@@ -16,6 +16,7 @@ package com.starrocks.catalog;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
+import com.google.common.collect.Sets;
 import com.starrocks.common.util.TimeUtils;
 import com.starrocks.connector.paimon.PaimonUtils;
 import com.starrocks.planner.DescriptorTable;
@@ -31,6 +32,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static com.starrocks.connector.ConnectorTableId.CONNECTOR_ID_GENERATOR;
@@ -89,7 +91,12 @@ public class PaimonTable extends Table {
     @Override
     public String getUUID() {
         if (Strings.isNullOrEmpty(this.uuid)) {
-            this.uuid = String.join(".", catalogName, databaseName, tableName, paimonNativeTable.uuid().replace(".", "_"));
+            String nativeUuid = paimonNativeTable.uuid();
+            if (Strings.isNullOrEmpty(nativeUuid)) {
+                // Keep identifier deterministic even when native table uuid is unavailable (e.g. mocked tables in tests).
+                nativeUuid = tableName;
+            }
+            this.uuid = String.join(".", catalogName, databaseName, tableName, nativeUuid.replace(".", "_"));
         }
         return this.uuid;
     }
@@ -136,12 +143,25 @@ public class PaimonTable extends Table {
     }
 
     @Override
+    public List<String> getDataColumnNames() {
+        return getBaseSchema().stream()
+                .map(Column::getName)
+                .filter(col -> !partColumnNames.contains(col))
+                .collect(Collectors.toList());
+    }
+
+    @Override
     public boolean isUnPartitioned() {
         return partColumnNames.isEmpty();
     }
 
     @Override
     public boolean isSupported() {
+        return true;
+    }
+
+    @Override
+    public boolean supportInsert() {
         return true;
     }
 
@@ -184,6 +204,12 @@ public class PaimonTable extends Table {
     @Override
     public boolean isTemporal() {
         return true;
+    }
+
+    @Override
+    public Set<TableOperation> getSupportedOperations() {
+        return Sets.newHashSet(TableOperation.READ, TableOperation.INSERT, TableOperation.DROP,
+                TableOperation.CREATE, TableOperation.ALTER);
     }
 
     @Override

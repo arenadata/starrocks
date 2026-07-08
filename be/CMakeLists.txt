@@ -207,6 +207,7 @@ option(USE_AVX2 "Build with AVX2 instruction" ON)
 option(USE_AVX512 "Build with AVX512f/AVX512BW instruction" OFF)
 
 option(WITH_TENANN "Build with TENANN" OFF)
+option(ENABLE_PAIMON_CPP "Enable Paimon C++ integration" ON)
 
 option(WITH_RELATIVE_SRC_PATH "Build source file with relative path" ON)
 
@@ -220,9 +221,16 @@ endif()
 option(ENABLE_MULTI_DYNAMIC_LIBS "Enable dynamic linking of individual StarRocks modules (developer option)" OFF)
 
 message(STATUS "WITH TENANN is: ${WITH_TENANN}")
+if (DEFINED ENV{ENABLE_PAIMON_CPP})
+    set(ENABLE_PAIMON_CPP "$ENV{ENABLE_PAIMON_CPP}" CACHE BOOL "" FORCE)
+endif()
+message(STATUS "ENABLE PAIMON CPP is: ${ENABLE_PAIMON_CPP}")
 if (APPLE AND WITH_STARCACHE)
     message(STATUS "Disable starcache on macOS")
     set(WITH_STARCACHE OFF CACHE BOOL "Build binary with starcache library" FORCE)
+endif()
+if (ENABLE_PAIMON_CPP)
+    add_definitions(-DENABLE_PAIMON_CPP)
 endif()
 
 # Check gcc
@@ -675,6 +683,23 @@ set(STARROCKS_DEPENDENCIES
     icudata
     ${WL_END_GROUP}
 )
+
+if (ENABLE_PAIMON_CPP)
+    set(STARROCKS_DEPENDENCIES
+        ${STARROCKS_DEPENDENCIES}
+        paimon
+        paimon_parquet_file_format
+        paimon_orc_file_format
+        paimon_blob_file_format
+        paimon_local_file_system
+        paimon_file_index
+        paimon_global_index
+        roaring_bitmap_paimon
+        xxhash_paimon
+        fmt_paimon
+        tbb_paimon
+    )
+endif()
 
 if (APPLE)
     list(REMOVE_ITEM STARROCKS_DEPENDENCIES

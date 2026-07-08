@@ -22,8 +22,11 @@ import com.starrocks.catalog.PaimonTable;
 import com.starrocks.catalog.PaimonView;
 import com.starrocks.catalog.PartitionKey;
 import com.starrocks.catalog.Table;
+import com.starrocks.common.AlreadyExistsException;
 import com.starrocks.common.Config;
 import com.starrocks.common.DdlException;
+import com.starrocks.common.MetaNotFoundException;
+import com.starrocks.common.StarRocksException;
 import com.starrocks.common.profile.Timer;
 import com.starrocks.common.profile.Tracers;
 import com.starrocks.common.tvr.TvrDeltaStats;
@@ -47,12 +50,26 @@ import com.starrocks.connector.RemoteFileInfo;
 import com.starrocks.connector.exception.StarRocksConnectorException;
 import com.starrocks.connector.statistics.StatisticsUtils;
 import com.starrocks.credential.CloudConfiguration;
+import com.starrocks.metric.ConnectorMetricsMgr;
 import com.starrocks.qe.ConnectContext;
+import com.starrocks.qe.ShowResultSet;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.analyzer.SemanticException;
+import com.starrocks.sql.ast.AddColumnClause;
+import com.starrocks.sql.ast.AlterClause;
+import com.starrocks.sql.ast.AlterTableStmt;
+import com.starrocks.sql.ast.ColumnRenameClause;
+import com.starrocks.sql.ast.CreateTableStmt;
 import com.starrocks.sql.ast.CreateViewStmt;
+import com.starrocks.sql.ast.DropColumnClause;
 import com.starrocks.sql.ast.DropTableStmt;
 import com.starrocks.sql.ast.KeyPartitionRef;
+import com.starrocks.sql.ast.KeysDesc;
+import com.starrocks.sql.ast.KeysType;
+import com.starrocks.sql.ast.ListPartitionDesc;
+import com.starrocks.sql.ast.ModifyTablePropertiesClause;
+import com.starrocks.sql.ast.PartitionDesc;
+import com.starrocks.sql.ast.RangePartitionDesc;
 import com.starrocks.sql.ast.TruncateTablePartitionStmt;
 import com.starrocks.sql.ast.TruncateTableStmt;
 import com.starrocks.sql.ast.expression.Expr;
@@ -64,6 +81,11 @@ import com.starrocks.sql.optimizer.operator.scalar.ConstantOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.statistics.ColumnStatistic;
 import com.starrocks.sql.optimizer.statistics.Statistics;
+import com.starrocks.thrift.THiveFileInfo;
+import com.starrocks.thrift.TPaimonFileInfo;
+import com.starrocks.thrift.TSinkCommitInfo;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.Path;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.paimon.CoreOptions;
@@ -80,6 +102,8 @@ import org.apache.paimon.operation.metrics.ScanMetrics;
 import org.apache.paimon.predicate.Predicate;
 import org.apache.paimon.reader.RecordReader;
 import org.apache.paimon.reader.RecordReaderIterator;
+import org.apache.paimon.schema.Schema;
+import org.apache.paimon.schema.SchemaChange;
 import org.apache.paimon.stats.ColStats;
 import org.apache.paimon.table.DataTable;
 import org.apache.paimon.table.sink.BatchTableCommit;
@@ -101,6 +125,7 @@ import org.apache.paimon.utils.TagManager;
 import org.apache.paimon.view.View;
 import org.apache.paimon.view.ViewImpl;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -166,6 +191,145 @@ public class PaimonMetadata implements ConnectorMetadata {
             return tableIdentifiers;
         } catch (Catalog.DatabaseNotExistException e) {
             throw new StarRocksConnectorException("Database %s not exists", dbName);
+        }
+    }
+
+    @Override
+    public void createDb(ConnectContext context, String dbName, Map<String, String> properties)
+            throws DdlException, AlreadyExistsException {
+        ensurePaimonDdlEnabled();
+        if (dbExists(context, dbName)) {
+            throw new AlreadyExistsException("Database Already Exists");
+        }
+
+        try {
+            paimonNativeCatalog.createDatabase(dbName, false, properties == null ? Collections.emptyMap() : properties);
+            databases.remove(dbName);
+        } catch (Catalog.DatabaseAlreadyExistException e) {
+            throw new AlreadyExistsException("Database Already Exists");
+        } catch (Exception e) {
+            throw new DdlException("Paimon create database error: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void dropDb(ConnectContext context, String dbName, boolean isForceDrop)
+            throws DdlException, MetaNotFoundException {
+        ensurePaimonDdlEnabled();
+        try {
+            if (!isForceDrop) {
+                List<String> tables = paimonNativeCatalog.listTables(dbName);
+                List<String> views = paimonNativeCatalog.listViews(dbName);
+                if (!tables.isEmpty() || !views.isEmpty()) {
+                    throw new StarRocksConnectorException("Database %s not empty", dbName);
+                }
+            }
+
+            paimonNativeCatalog.dropDatabase(dbName, false, isForceDrop);
+            databases.remove(dbName);
+            this.tables.keySet().removeIf(id -> id.getDatabaseName().equals(dbName));
+            this.partitionInfos.keySet().removeIf(id -> id.getDatabaseName().equals(dbName));
+        } catch (Catalog.DatabaseNotExistException e) {
+            throw new MetaNotFoundException("Not found database " + dbName);
+        } catch (Catalog.DatabaseNotEmptyException e) {
+            throw new DdlException("Database " + dbName + " not empty", e);
+        } catch (StarRocksConnectorException e) {
+            throw new DdlException(e.getMessage(), e);
+        } catch (Exception e) {
+            throw new DdlException("Paimon drop database error: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public boolean createTable(ConnectContext context, CreateTableStmt stmt) throws DdlException {
+        ensurePaimonDdlEnabled();
+        Schema.Builder schemaBuilder = new Schema.Builder();
+        for (Column column : stmt.getColumns()) {
+            schemaBuilder.column(column.getName(), ColumnTypeConverter.toPaimonDataType(column.getType()));
+        }
+
+        List<String> partitionColumns = extractPartitionColumnNames(stmt.getPartitionDesc());
+        if (!partitionColumns.isEmpty()) {
+            schemaBuilder.partitionKeys(partitionColumns.toArray(new String[0]));
+        }
+
+        KeysDesc keysDesc = stmt.getKeysDesc();
+        if (keysDesc != null && keysDesc.getKeysType() == KeysType.PRIMARY_KEYS && !keysDesc.getKeysColumnNames().isEmpty()) {
+            schemaBuilder.primaryKey(keysDesc.getKeysColumnNames().toArray(new String[0]));
+        }
+
+        if (stmt.getProperties() != null) {
+            stmt.getProperties().forEach((key, value) -> {
+                if (key != null && value != null) {
+                    schemaBuilder.option(key, value);
+                }
+            });
+        }
+
+        // Paimon schema comment API changes across versions; keep table comment in options for compatibility.
+        if (stmt.getComment() != null && !stmt.getComment().isEmpty()) {
+            schemaBuilder.option("comment", stmt.getComment());
+        }
+
+        try {
+            paimonNativeCatalog.createTable(new Identifier(stmt.getDbName(), stmt.getTableName()),
+                    schemaBuilder.build(), stmt.isSetIfNotExists());
+            invalidateTableCache(stmt.getDbName(), stmt.getTableName());
+            return true;
+        } catch (Catalog.TableAlreadyExistException e) {
+            if (stmt.isSetIfNotExists()) {
+                return true;
+            }
+            throw new DdlException("Paimon table already exists: " + stmt.getDbName() + "." + stmt.getTableName(), e);
+        } catch (Catalog.DatabaseNotExistException e) {
+            throw new DdlException("Paimon database does not exist: " + stmt.getDbName(), e);
+        } catch (Exception e) {
+            throw new DdlException("Paimon create table error: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public ShowResultSet alterTable(ConnectContext context, AlterTableStmt stmt) throws StarRocksException {
+        ensurePaimonDdlEnabled();
+        Identifier identifier = new Identifier(stmt.getDbName(), stmt.getTableName());
+        List<SchemaChange> changes = new ArrayList<>();
+        for (AlterClause alterClause : stmt.getAlterClauseList()) {
+            if (alterClause instanceof AddColumnClause) {
+                AddColumnClause addColumnClause = (AddColumnClause) alterClause;
+                changes.add(SchemaChange.addColumn(
+                        addColumnClause.getColumnDef().getName(),
+                        ColumnTypeConverter.toPaimonDataType(addColumnClause.getColumnDef().getType()),
+                        addColumnClause.getColumnDef().getComment()));
+            } else if (alterClause instanceof DropColumnClause) {
+                DropColumnClause dropColumnClause = (DropColumnClause) alterClause;
+                changes.add(SchemaChange.dropColumn(dropColumnClause.getColName()));
+            } else if (alterClause instanceof ColumnRenameClause) {
+                ColumnRenameClause renameClause = (ColumnRenameClause) alterClause;
+                changes.add(SchemaChange.renameColumn(renameClause.getColName(), renameClause.getNewColName()));
+            } else if (alterClause instanceof ModifyTablePropertiesClause) {
+                ModifyTablePropertiesClause propertiesClause = (ModifyTablePropertiesClause) alterClause;
+                for (Map.Entry<String, String> entry : propertiesClause.getProperties().entrySet()) {
+                    if (entry.getValue() == null) {
+                        changes.add(SchemaChange.removeOption(entry.getKey()));
+                    } else {
+                        changes.add(SchemaChange.setOption(entry.getKey(), entry.getValue()));
+                    }
+                }
+            } else {
+                throw new StarRocksConnectorException("This connector doesn't support alter table type: %s",
+                        alterClause.getClass().getSimpleName());
+            }
+        }
+
+        try {
+            paimonNativeCatalog.alterTable(identifier, changes, false);
+            invalidateTableCache(stmt.getDbName(), stmt.getTableName());
+            return null;
+        } catch (Catalog.TableNotExistException e) {
+            throw new StarRocksConnectorException("Paimon table does not exist: %s.%s",
+                    stmt.getDbName(), stmt.getTableName());
+        } catch (Exception e) {
+            throw new StarRocksConnectorException("Paimon alter table error: %s", e.getMessage());
         }
     }
 
@@ -977,6 +1141,124 @@ public class PaimonMetadata implements ConnectorMetadata {
         }
 
         return partitionMap;
+    }
+
+    private List<String> extractPartitionColumnNames(PartitionDesc partitionDesc) throws DdlException {
+        if (partitionDesc == null) {
+            return Collections.emptyList();
+        }
+        if (partitionDesc instanceof ListPartitionDesc) {
+            return ((ListPartitionDesc) partitionDesc).getPartitionColNames();
+        }
+        if (partitionDesc instanceof RangePartitionDesc) {
+            return ((RangePartitionDesc) partitionDesc).getPartitionColNames();
+        }
+        throw new DdlException("Only list/range partition is supported for paimon table");
+    }
+
+    private void ensurePaimonDdlEnabled() throws DdlException {
+        ConnectContext context = ConnectContext.get();
+        if (context != null && !context.getSessionVariable().getEnablePaimonDdl()) {
+            throw new DdlException("Paimon DDL is disabled. Set enable_paimon_ddl=true to enable it");
+        }
+    }
+
+    private void invalidateTableCache(String dbName, String tableName) {
+        Identifier identifier = new Identifier(dbName, tableName);
+        tables.remove(identifier);
+        partitionInfos.remove(identifier);
+        try {
+            paimonNativeCatalog.invalidateTable(identifier);
+        } catch (Exception e) {
+            LOG.warn("Failed to invalidate paimon table cache: {}.{}", dbName, tableName, e);
+        }
+    }
+
+    @Override
+    public void finishSink(String dbName, String tableName, List<TSinkCommitInfo> commitInfos, String branch) {
+        if (commitInfos == null || commitInfos.isEmpty()) {
+            LOG.warn("No commit info on {}.{} after paimon sink", dbName, tableName);
+            return;
+        }
+
+        List<TPaimonFileInfo> paimonFileInfos = commitInfos.stream()
+                .filter(TSinkCommitInfo::isSetPaimon_file_info)
+                .map(TSinkCommitInfo::getPaimon_file_info)
+                .collect(Collectors.toList());
+        if (paimonFileInfos.isEmpty()) {
+            paimonFileInfos = commitInfos.stream()
+                    .filter(TSinkCommitInfo::isSetHive_file_info)
+                    .map(TSinkCommitInfo::getHive_file_info)
+                    .map(this::toPaimonFileInfo)
+                    .collect(Collectors.toList());
+        }
+
+        if (paimonFileInfos.isEmpty()) {
+            LOG.warn("No paimon file info found in sink commit infos on {}.{}", dbName, tableName);
+            return;
+        }
+
+        String writeType = commitInfos.get(0).isIs_overwrite() ? "overwrite" : "insert";
+        long startMs = System.currentTimeMillis();
+        long totalRows = paimonFileInfos.stream().mapToLong(TPaimonFileInfo::getRecord_count).sum();
+        long totalBytes = paimonFileInfos.stream().mapToLong(TPaimonFileInfo::getFile_size_in_bytes).sum();
+        long totalFiles = paimonFileInfos.size();
+        try {
+            Identifier identifier = new Identifier(dbName, tableName);
+            Table table = tables.get(identifier);
+            if (table != null) {
+                refreshTable(dbName, table, null, true);
+            } else {
+                paimonNativeCatalog.invalidateTable(identifier);
+            }
+            ConnectorMetricsMgr.increaseWriteTotalSuccess(ConnectorMetricsMgr.CONNECTOR_PAIMON, writeType);
+            ConnectorMetricsMgr.increaseWriteRows(ConnectorMetricsMgr.CONNECTOR_PAIMON, totalRows, writeType);
+            ConnectorMetricsMgr.increaseWriteBytes(ConnectorMetricsMgr.CONNECTOR_PAIMON, totalBytes, writeType);
+            ConnectorMetricsMgr.increaseWriteFiles(ConnectorMetricsMgr.CONNECTOR_PAIMON, totalFiles, writeType);
+        } catch (Exception e) {
+            throw new StarRocksConnectorException("Failed to finish paimon sink commit: %s", e.getMessage());
+        } finally {
+            ConnectorMetricsMgr.increaseWriteDurationMs(ConnectorMetricsMgr.CONNECTOR_PAIMON,
+                    System.currentTimeMillis() - startMs, writeType);
+        }
+    }
+
+    @Override
+    public void abortSink(String dbName, String tableName, List<TSinkCommitInfo> commitInfos) {
+        if (commitInfos == null || commitInfos.isEmpty()) {
+            return;
+        }
+
+        for (TSinkCommitInfo sinkCommitInfo : commitInfos) {
+            if (sinkCommitInfo.isSetPaimon_file_info()) {
+                TPaimonFileInfo fileInfo = sinkCommitInfo.getPaimon_file_info();
+                deleteIfExists(fileInfo.getPartition_path() + "/" + fileInfo.getFile_name());
+            } else if (sinkCommitInfo.isSetHive_file_info()) {
+                THiveFileInfo fileInfo = sinkCommitInfo.getHive_file_info();
+                deleteIfExists(fileInfo.getPartition_path() + "/" + fileInfo.getFile_name());
+            }
+        }
+    }
+
+    private TPaimonFileInfo toPaimonFileInfo(THiveFileInfo hiveFileInfo) {
+        TPaimonFileInfo paimonFileInfo = new TPaimonFileInfo();
+        paimonFileInfo.setFile_name(hiveFileInfo.getFile_name());
+        paimonFileInfo.setPartition_path(hiveFileInfo.getPartition_path());
+        paimonFileInfo.setRecord_count(hiveFileInfo.getRecord_count());
+        paimonFileInfo.setFile_size_in_bytes(hiveFileInfo.getFile_size_in_bytes());
+        return paimonFileInfo;
+    }
+
+    private void deleteIfExists(String path) {
+        try {
+            Path filePath = new Path(path);
+            FileSystem fileSystem = filePath.getFileSystem(hdfsEnvironment.getConfiguration());
+            if (fileSystem.exists(filePath)) {
+                fileSystem.delete(filePath, false);
+            }
+        } catch (IOException e) {
+            LOG.warn("Failed to delete paimon staged file: {}", path, e);
+        }
     }
 
     @Override

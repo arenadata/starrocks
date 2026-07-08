@@ -61,7 +61,8 @@ enum TDataSinkType {
     SPLIT_DATA_STREAM_SINK,
     NOOP_SINK,
     ICEBERG_DELETE_SINK,
-    ICEBERG_ROW_DELTA_SINK
+    ICEBERG_ROW_DELTA_SINK,
+    PAIMON_TABLE_SINK
 }
 
 enum TResultSinkType {
@@ -299,6 +300,17 @@ struct THiveTableSink {
     9: optional Descriptors.TTextFileDesc text_file_desc // for textfile format
 }
 
+struct TPaimonTableSink {
+    1: optional string staging_dir
+    2: optional string file_format
+    3: optional list<string> data_column_names
+    4: optional list<string> partition_column_names
+    5: optional Types.TCompressionType compression_type
+    6: optional bool is_static_partition_sink
+    7: optional CloudConfiguration.TCloudConfiguration cloud_configuration
+    8: optional i64 target_max_file_size
+}
+
 struct TTableFunctionTableSink {
     1: optional Descriptors.TTableFunctionTable target_table
     2: optional CloudConfiguration.TCloudConfiguration cloud_configuration
@@ -327,4 +339,5 @@ struct TDataSink {
   15: optional list<TDataSink> multi_olap_table_sinks
   16: optional i64 sink_id
   17: optional TSplitDataStreamSink split_stream_sink
+  18: optional TPaimonTableSink paimon_table_sink
 }
