@@ -122,7 +122,7 @@ write_hash_memory_shim() {
 #define _LIBCPP_HAS_NO_HASH_MEMORY 1
 #endif
 #include <cstddef>
-namespace std { namespace __1 {
+namespace std { inline namespace __1 {
 [[gnu::pure]] size_t
 __hash_memory(const void* __ptr, size_t __size) noexcept {
     size_t h = 0;
@@ -2244,6 +2244,21 @@ build_paimon_cpp() {
     "${BUILD_SYSTEM}" install
 
     mkdir -p "${TP_INSTALL_DIR}/lib64"
+
+    # Mirror paimon archives into lib64 for consumers that prefer that path.
+    for _paimon_lib in \
+        libpaimon.a \
+        libpaimon_parquet_file_format.a \
+        libpaimon_orc_file_format.a \
+        libpaimon_blob_file_format.a \
+        libpaimon_local_file_system.a \
+        libpaimon_file_index.a \
+        libpaimon_global_index.a
+    do
+        if [[ -f "${TP_INSTALL_DIR}/lib/${_paimon_lib}" ]]; then
+            cp -f "${TP_INSTALL_DIR}/lib/${_paimon_lib}" "${TP_INSTALL_DIR}/lib64/${_paimon_lib}"
+        fi
+    done
 
     if [[ -f "release/libroaring_bitmap.a" ]]; then
         cp -f "release/libroaring_bitmap.a" "${TP_INSTALL_DIR}/lib64/libroaring_bitmap_paimon.a"

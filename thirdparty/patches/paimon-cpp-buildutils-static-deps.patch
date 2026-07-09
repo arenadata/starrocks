@@ -1,5 +1,5 @@
---- a/cmake_modules/BuildUtils.cmake
-+++ b/cmake_modules/BuildUtils.cmake
+--- a/cmake_modules/BuildUtils.cmake	2026-02-09 06:39:50
++++ b/cmake_modules/BuildUtils.cmake	2026-07-09 21:29:37
 @@ -55,12 +55,18 @@
      # Necessary to make static linking into other shared libraries work properly
      set_property(TARGET ${LIB_NAME}_objlib PROPERTY POSITION_INDEPENDENT_CODE 1)
@@ -22,8 +22,8 @@
          endforeach()
          if(_paimon_objlib_deps)
              add_dependencies(${LIB_NAME}_objlib ${_paimon_objlib_deps})
---- a/CMakeLists.txt
-+++ b/CMakeLists.txt
+--- a/CMakeLists.txt	2026-02-09 06:39:50
++++ b/CMakeLists.txt	2026-07-09 21:29:37
 @@ -37,7 +37,9 @@
  
  string(TOUPPER "${CMAKE_BUILD_TYPE}" UPPERCASE_BUILD_TYPE)
@@ -47,8 +47,8 @@
  add_compile_definitions("GLOG_USE_GLOG_EXPORT")
  
  set(THREADS_PREFER_PTHREAD_FLAG ON)
---- a/cmake_modules/ThirdpartyToolchain.cmake
-+++ b/cmake_modules/ThirdpartyToolchain.cmake
+--- a/cmake_modules/ThirdpartyToolchain.cmake	2026-02-09 06:39:50
++++ b/cmake_modules/ThirdpartyToolchain.cmake	2026-07-09 21:57:49
 @@ -33,6 +33,16 @@
  
  set(EP_COMMON_TOOLCHAIN "-DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}"
@@ -100,7 +100,7 @@
  
      # Strip lto flags (which may be added by dh_auto_configure)
      # See https://github.com/protocolbuffers/protobuf/issues/7092
-@@ -772,14 +789,63 @@
+@@ -772,14 +789,68 @@
      string(REPLACE "-ffat-lto-objects" "" PROTOBUF_CXX_FLAGS "${PROTOBUF_CXX_FLAGS}")
      string(APPEND PROTOBUF_CXX_FLAGS
             " -Wno-inconsistent-missing-override -Wno-unneeded-internal-declaration")
@@ -119,7 +119,7 @@
 +             "#define _LIBCPP_HAS_NO_HASH_MEMORY 1\n"
 +             "#endif\n"
 +             "#include <cstddef>\n"
-+             "namespace std { namespace __1 {\n"
++             "namespace std { inline namespace __1 {\n"
 +             "[[gnu::pure]] size_t\n"
 +             "__hash_memory(const void* __ptr, size_t __size) noexcept {\n"
 +             "    size_t h = 0;\n"
@@ -130,14 +130,19 @@
 +             "    return h;\n"
 +             "}\n"
 +             "} }\n")
++        # VERBATIM does not word-split CMAKE_CXX_FLAGS; expand into a real argv list.
++        separate_arguments(_paimon_protobuf_shim_cxx_flags NATIVE_COMMAND
++                           "${CMAKE_CXX_FLAGS}")
 +        add_custom_command(OUTPUT "${PROTOBUF_HASH_MEMORY_SHIM_OBJ}"
-+                           COMMAND ${CMAKE_CXX_COMPILER} ${CMAKE_CXX_FLAGS} -c
++                           COMMAND ${CMAKE_CXX_COMPILER}
++                                   ${_paimon_protobuf_shim_cxx_flags} -c
 +                                   "${PROTOBUF_HASH_MEMORY_SHIM_SRC}" -o
 +                                   "${PROTOBUF_HASH_MEMORY_SHIM_OBJ}"
 +                           DEPENDS "${PROTOBUF_HASH_MEMORY_SHIM_SRC}"
 +                           COMMENT
 +                           "Building Darwin __hash_memory shim for protobuf_ep"
 +                           VERBATIM)
++        unset(_paimon_protobuf_shim_cxx_flags)
 +        add_custom_target(paimon_protobuf_hash_memory_shim
 +                          DEPENDS "${PROTOBUF_HASH_MEMORY_SHIM_OBJ}")
 +        list(APPEND PROTOBUF_EP_DEPENDS paimon_protobuf_hash_memory_shim)
@@ -164,7 +169,7 @@
      set(PROTOBUF_CONFIGURE SOURCE_SUBDIR "cmake" CMAKE_ARGS ${PROTOBUF_CMAKE_ARGS})
  
      externalproject_add(protobuf_ep
-@@ -788,8 +854,19 @@
+@@ -788,8 +859,19 @@
                          ${PROTOBUF_CONFIGURE} ${THIRDPARTY_LOG_OPTIONS}
                          # BUILD_IN_SOURCE 1
                          BUILD_BYPRODUCTS "${PROTOBUF_STATIC_LIB}" "${PROTOBUF_COMPILER}"
@@ -185,7 +190,7 @@
      file(MAKE_DIRECTORY "${PROTOBUF_INCLUDE_DIR}")
  
      include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
-@@ -909,9 +986,6 @@
+@@ -909,9 +991,6 @@
          "-DCMAKE_CXX_FLAGS=${ORC_CMAKE_CXX_FLAGS}"
          "-DCMAKE_C_FLAGS=${ORC_CMAKE_C_FLAGS}"
          "-DCMAKE_CXX_FLAGS_${UPPERCASE_BUILD_TYPE}=${ORC_CMAKE_CXX_FLAGS}"
@@ -195,7 +200,7 @@
          "-DSNAPPY_HOME=${ORC_SNAPPY_ROOT}"
          "-DLZ4_HOME=${ORC_LZ4_ROOT}"
          "-DZSTD_HOME=${ORC_ZSTD_ROOT}"
-@@ -923,6 +997,13 @@
+@@ -923,6 +1002,13 @@
          -DBUILD_TOOLS=OFF
          -DBUILD_CPP_ENABLE_METRICS=ON)
  
@@ -209,7 +214,7 @@
      set(PATCH_FILE "${CMAKE_CURRENT_LIST_DIR}/orc.diff")
      externalproject_add(orc_ep
                          URL ${ORC_SOURCE_URL}
-@@ -959,8 +1040,98 @@
+@@ -959,8 +1045,98 @@
  endmacro()
  
  macro(build_arrow)
@@ -228,7 +233,7 @@
 +                            "${PAIMON_EXTERNAL_ARROW_INCLUDE_DIR}/parquet"
 +                            "${ARROW_INCLUDE_DIR}/parquet")
 +        endif()
- 
++
 +        if(NOT PAIMON_EXTERNAL_ARROW_INCLUDE_DIR)
 +            message(FATAL_ERROR
 +                    "PAIMON_EXTERNAL_ARROW_INCLUDE_DIR must be set when PAIMON_USE_EXTERNAL_ARROW=ON"
@@ -268,7 +273,7 @@
 +                                         "${PAIMON_EXTERNAL_ARROW_DATASET_LIB}"
 +                                         INTERFACE_INCLUDE_DIRECTORIES
 +                                         "${ARROW_INCLUDE_DIR}")
-+
+ 
 +        add_library(arrow_acero STATIC IMPORTED)
 +        set_target_properties(arrow_acero
 +                              PROPERTIES IMPORTED_LOCATION
@@ -309,7 +314,7 @@
      get_target_property(ARROW_SNAPPY_INCLUDE_DIR snappy INTERFACE_INCLUDE_DIRECTORIES)
      get_filename_component(ARROW_SNAPPY_ROOT "${ARROW_SNAPPY_INCLUDE_DIR}" DIRECTORY)
  
-@@ -1014,6 +1185,14 @@
+@@ -1014,6 +1190,14 @@
          "-DCMAKE_C_FLAGS=${ARROW_CMAKE_C_FLAGS}"
          "-DCMAKE_CXX_FLAGS_${UPPERCASE_BUILD_TYPE}=${ARROW_CMAKE_CXX_FLAGS}"
          -DARROW_DEPENDENCY_USE_SHARED=OFF
@@ -324,7 +329,7 @@
          -DARROW_BUILD_SHARED=OFF
          -DARROW_BUILD_STATIC=ON
          -DARROW_BUILD_TESTS=OFF
-@@ -1120,6 +1299,7 @@
+@@ -1120,6 +1304,7 @@
                                      zlib
                                      arrow_bundled_dependencies
                                      arrow_dataset)
@@ -332,8 +337,8 @@
  
  endmacro(build_arrow)
  
---- a/src/paimon/CMakeLists.txt
-+++ b/src/paimon/CMakeLists.txt
+--- a/src/paimon/CMakeLists.txt	2026-02-09 06:39:50
++++ b/src/paimon/CMakeLists.txt	2026-07-09 21:50:46
 @@ -288,6 +288,10 @@
                 fmt
                 roaring_bitmap
@@ -354,8 +359,8 @@
                 Threads::Threads
                 RapidJSON
                 SHARED_LINK_FLAGS
---- a/src/paimon/common/logging/logging.cpp
-+++ b/src/paimon/common/logging/logging.cpp
+--- a/src/paimon/common/logging/logging.cpp	2026-02-09 06:39:50
++++ b/src/paimon/common/logging/logging.cpp	2026-07-09 21:29:37
 @@ -83,7 +83,7 @@
      }
      std::unique_lock<std::shared_mutex> ulock(getRegistryLock());
@@ -365,8 +370,8 @@
      }
      return std::make_unique<GlogAdaptor>();
  }
---- a/src/paimon/common/memory/memory_pool.cpp
-+++ b/src/paimon/common/memory/memory_pool.cpp
+--- a/src/paimon/common/memory/memory_pool.cpp	2026-02-09 06:39:50
++++ b/src/paimon/common/memory/memory_pool.cpp	2026-07-09 21:29:37
 @@ -55,7 +55,7 @@
      return memptr;
  }
@@ -376,8 +381,8 @@
      if (alignment == 0) {
          void* memptr = ::realloc(p, new_size);
          total_allocated_size.fetch_add(new_size - old_size);
---- a/src/paimon/format/blob/blob_format_writer.cpp
-+++ b/src/paimon/format/blob/blob_format_writer.cpp
+--- a/src/paimon/format/blob/blob_format_writer.cpp	2026-02-09 06:39:50
++++ b/src/paimon/format/blob/blob_format_writer.cpp	2026-07-09 21:29:38
 @@ -138,7 +138,8 @@
      }
      PAIMON_ASSIGN_OR_RAISE(uint64_t file_length, in->Length());
@@ -398,3 +403,51 @@
      }
  
      // write bin length
+--- a/src/paimon/format/parquet/parquet_format_writer.cpp	2026-02-09 06:39:50
++++ b/src/paimon/format/parquet/parquet_format_writer.cpp	2026-07-09 22:00:12
+@@ -85,8 +85,10 @@
+ }
+ 
+ Result<uint64_t> ParquetFormatWriter::GetEstimateLength() const {
++    // Stock Apache Arrow FileWriter has no GetBufferedSize() (Doris-only extension).
++    // Approximate with bytes already flushed to the output stream.
+     PAIMON_ASSIGN_OR_RAISE_FROM_ARROW(int64_t written_bytes, out_->Tell());
+-    return writer_->GetBufferedSize() + written_bytes;
++    return static_cast<uint64_t>(written_bytes);
+ }
+ 
+ ParquetFormatWriter::ParquetFormatWriter(std::unique_ptr<::parquet::arrow::FileWriter> writer,
+--- a/src/paimon/format/parquet/parquet_writer_builder.cpp	2026-02-09 06:39:50
++++ b/src/paimon/format/parquet/parquet_writer_builder.cpp	2026-07-09 22:00:19
+@@ -72,10 +72,9 @@
+         builder.compression_level(file_compression_level);
+     }
+ 
+-    PAIMON_ASSIGN_OR_RAISE(int64_t row_group_size, OptionsUtils::GetValueFromMap<int64_t>(
+-                                                       options_, PARQUET_BLOCK_SIZE,
+-                                                       ::parquet::DEFAULT_MAX_ROW_GROUP_SIZE));
+-    builder.max_row_group_size(row_group_size);
++    // Stock Apache Arrow WriterProperties has no max_row_group_size() /
++    // DEFAULT_MAX_ROW_GROUP_SIZE (Doris-only). Row-group sizing is controlled by
++    // max_row_group_length() above; PARQUET_BLOCK_SIZE is ignored here.
+ 
+     PAIMON_ASSIGN_OR_RAISE(int64_t page_size,
+                            OptionsUtils::GetValueFromMap<int64_t>(options_, PARQUET_PAGE_SIZE,
+--- a/src/paimon/format/parquet/parquet_writer_builder_test.cpp	2026-02-09 06:39:50
++++ b/src/paimon/format/parquet/parquet_writer_builder_test.cpp	2026-07-09 22:00:13
+@@ -46,7 +46,6 @@
+     ASSERT_EQ(1024 * 1024, properties->dictionary_pagesize_limit());
+     ASSERT_EQ(1024 * 1024, properties->data_pagesize());
+     ASSERT_EQ(std::numeric_limits<int64_t>::max(), properties->max_row_group_length());
+-    ASSERT_EQ(128 * 1024 * 1024, properties->max_row_group_size());
+     ASSERT_EQ(1024, properties->write_batch_size());
+     ASSERT_EQ(1, properties->default_column_properties().compression_level());
+     ASSERT_TRUE(properties->store_decimal_as_integer());
+@@ -70,7 +69,6 @@
+     ASSERT_EQ(::parquet::ParquetVersion::PARQUET_2_6, properties->version());
+     ASSERT_EQ(4096, properties->dictionary_pagesize_limit());
+     ASSERT_EQ(1024, properties->data_pagesize());
+-    ASSERT_EQ(2048, properties->max_row_group_size());
+     ASSERT_EQ(1024 * 1024, properties->write_batch_size());
+     ASSERT_EQ(3, properties->default_column_properties().compression_level());
+ }

@@ -1749,6 +1749,22 @@ build_paimon_cpp() {
 
     mkdir -p "${TP_INSTALL_DIR}/lib64"
 
+    # Paimon installs archives into lib/ (CMAKE_INSTALL_LIBDIR=lib). Linux BE
+    # resolves thirdparty libs from lib64 first, so mirror them there.
+    for _paimon_lib in \
+        libpaimon.a \
+        libpaimon_parquet_file_format.a \
+        libpaimon_orc_file_format.a \
+        libpaimon_blob_file_format.a \
+        libpaimon_local_file_system.a \
+        libpaimon_file_index.a \
+        libpaimon_global_index.a
+    do
+        if [ -f "${TP_INSTALL_DIR}/lib/${_paimon_lib}" ]; then
+            cp -f "${TP_INSTALL_DIR}/lib/${_paimon_lib}" "${TP_INSTALL_DIR}/lib64/${_paimon_lib}"
+        fi
+    done
+
     # Install paimon-cpp internal dependencies with renamed names to avoid symbol conflicts.
     if [ -f "release/libroaring_bitmap.a" ]; then
         cp -f "release/libroaring_bitmap.a" "${TP_INSTALL_DIR}/lib64/libroaring_bitmap_paimon.a"
