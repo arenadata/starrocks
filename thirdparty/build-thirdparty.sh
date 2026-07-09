@@ -921,7 +921,10 @@ build_arrow() {
     # so disable jemalloc here and use SystemAllocator.
     #
     # Currently, the standard APIs are hooked in BE, so the jemalloc standard APIs will actually be used.
+    # COMPUTE/FILESYSTEM/DATASET/ACERO are required so paimon-cpp can reuse
+    # StarRocks Arrow via PAIMON_USE_EXTERNAL_ARROW instead of building arrow_ep.
     ${CMAKE_CMD} -DARROW_PARQUET=ON -DARROW_JSON=ON -DARROW_IPC=ON -DARROW_USE_GLOG=OFF -DARROW_BUILD_STATIC=ON -DARROW_BUILD_SHARED=OFF \
+    -DARROW_COMPUTE=ON -DARROW_FILESYSTEM=ON -DARROW_DATASET=ON -DARROW_ACERO=ON \
     -DARROW_WITH_BROTLI=ON -DARROW_WITH_LZ4=ON -DARROW_WITH_SNAPPY=ON -DARROW_WITH_ZLIB=ON -DARROW_WITH_ZSTD=ON \
     -DARROW_WITH_UTF8PROC=OFF -DARROW_WITH_RE2=OFF \
     -DARROW_JEMALLOC=OFF -DARROW_MIMALLOC=OFF \
@@ -1728,6 +1731,7 @@ build_paimon_cpp() {
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
         -DCMAKE_CXX_STANDARD=17 \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
         -DPAIMON_BUILD_SHARED=OFF \
         -DPAIMON_BUILD_STATIC=ON \
         -DPAIMON_BUILD_TESTS=OFF \

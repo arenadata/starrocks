@@ -394,10 +394,9 @@ Status LevelBuilder::_write_datetime_column_chunk(const LevelBuilderContext& ctx
                                                       : data_col[i]._timestamp;
 
         if constexpr (use_int96_timestamp_encoding) {
-            auto date = reinterpret_cast<int32_t*>(values[i].value + 2);
-            auto nanosecond = reinterpret_cast<int64_t*>(values[i].value);
-            *date = timestamp::to_julian(timestamp);
-            *nanosecond = timestamp::to_time(timestamp) * 1000;
+            // Int96::value is std::array<uint32_t, 3> in newer Arrow: ns in [0..1], Julian day in [2].
+            ::parquet::Int96SetNanoSeconds(values[i], timestamp::to_time(timestamp) * 1000);
+            values[i].value[2] = static_cast<uint32_t>(timestamp::to_julian(timestamp));
         } else {
             int64_t value = timestamp::to_julian(timestamp);
             value *= USECS_PER_DAY;

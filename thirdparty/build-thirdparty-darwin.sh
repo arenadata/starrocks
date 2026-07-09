@@ -1495,11 +1495,14 @@ build_formula_brotli() {
 }
 
 build_arrow() {
-    # libarrow_flight_sql.a as short-circuit sentinel: it is installed last,
-    # so its presence implies libarrow_flight.a + libarrow.a; a pre-Flight
-    # install or a run interrupted mid-way falls through to a full rebuild.
+    # Short-circuit only when the full module set paimon-cpp reuses is present
+    # (core + parquet + flight + dataset + acero). Older installs without
+    # Dataset/Acero must rebuild so PAIMON_USE_EXTERNAL_ARROW can succeed.
     if [[ -f "${TP_INSTALL_DIR}/lib/libarrow.a" && -f "${TP_INSTALL_DIR}/lib/libparquet.a" \
-          && -f "${TP_INSTALL_DIR}/lib/libarrow_flight_sql.a" && -f "${TP_INCLUDE_DIR}/arrow/api.h" ]]; then
+          && -f "${TP_INSTALL_DIR}/lib/libarrow_flight_sql.a" \
+          && -f "${TP_INSTALL_DIR}/lib/libarrow_dataset.a" \
+          && -f "${TP_INSTALL_DIR}/lib/libarrow_acero.a" \
+          && -f "${TP_INCLUDE_DIR}/arrow/api.h" ]]; then
         return 0
     fi
 
@@ -1596,6 +1599,10 @@ build_arrow() {
         -DARROW_PARQUET=ON \
         -DARROW_JSON=ON \
         -DARROW_IPC=ON \
+        -DARROW_COMPUTE=ON \
+        -DARROW_FILESYSTEM=ON \
+        -DARROW_DATASET=ON \
+        -DARROW_ACERO=ON \
         -DARROW_USE_GLOG=OFF \
         -DARROW_WITH_BROTLI=ON \
         -DARROW_WITH_LZ4=ON \
@@ -2220,6 +2227,7 @@ build_paimon_cpp() {
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
         -DCMAKE_CXX_STANDARD=17 \
+        -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
         -DPAIMON_BUILD_SHARED=OFF \
         -DPAIMON_BUILD_STATIC=ON \
         -DPAIMON_BUILD_TESTS=OFF \

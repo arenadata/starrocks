@@ -631,3 +631,19 @@ if [[ -d $TP_SOURCE_DIR/$HADOOPSRC_SOURCE ]] ; then
     cd -
     echo "Finished patching $HADOOPSRC_SOURCE"
 fi
+
+# patch paimon-cpp: reuse StarRocks Arrow (PAIMON_USE_EXTERNAL_ARROW) and
+# static-only dependency mapping used by the Darwin/Linux thirdparty build.
+if [[ -d "${TP_SOURCE_DIR}/${PAIMON_CPP_SOURCE}" ]]; then
+    cd "${TP_SOURCE_DIR}/${PAIMON_CPP_SOURCE}"
+    if [[ ! -f "${PATCHED_MARK}" ]]; then
+        if patch -p1 -N --batch --dry-run <"${TP_PATCH_DIR}/paimon-cpp-buildutils-static-deps.patch" >/dev/null 2>&1; then
+            patch -p1 -N --batch <"${TP_PATCH_DIR}/paimon-cpp-buildutils-static-deps.patch"
+        else
+            echo "Skip paimon-cpp patch: already applied or not applicable for current source"
+        fi
+        touch "${PATCHED_MARK}"
+    fi
+    cd -
+    echo "Finished patching ${PAIMON_CPP_SOURCE}"
+fi
