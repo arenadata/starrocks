@@ -143,6 +143,21 @@ diff --git a/cmake_modules/ThirdpartyToolchain.cmake b/cmake_modules/ThirdpartyT
 +    # CMake 4.x rejects projects with cmake_minimum_required < 3.5 (e.g. lz4 1.9.4).
 +    -DCMAKE_POLICY_VERSION_MINIMUM=3.5)
 
+diff --git a/cmake_modules/ThirdpartyToolchain.cmake b/cmake_modules/ThirdpartyToolchain.cmake
+--- a/cmake_modules/ThirdpartyToolchain.cmake
++++ b/cmake_modules/ThirdpartyToolchain.cmake
+@@ -431,8 +431,10 @@ macro(build_fmt)
+     set(FMT_STATIC_LIB
+         "${FMT_PREFIX}/lib/${CMAKE_STATIC_LIBRARY_PREFIX}${FMT_STATIC_LIB_NAME}${FMT_LIB_SUFFIX}${CMAKE_STATIC_LIBRARY_SUFFIX}"
+     )
+     set(FMT_LIBRARIES ${FMT_STATIC_LIB})
+-    set(FMT_CMAKE_CXX_FLAGS "${EP_CXX_FLAGS} -Wno-error")
+-    set(FMT_CMAKE_C_FLAGS "${EP_C_FLAGS} -Wno-error")
++    # Clang 21 + fmt 11.2.0: format.h uses malloc/free without always pulling
++    # <cstdlib> into the TU (esp. with -fvisibility=hidden). Force the include.
++    set(FMT_CMAKE_CXX_FLAGS "${EP_CXX_FLAGS} -Wno-error -include cstdlib")
++    set(FMT_CMAKE_C_FLAGS "${EP_C_FLAGS} -Wno-error -include stdlib.h")
+     string(REPLACE "-Werror" "" FMT_CMAKE_CXX_FLAGS ${FMT_CMAKE_CXX_FLAGS})
 
 diff --git a/cmake_modules/ThirdpartyToolchain.cmake b/cmake_modules/ThirdpartyToolchain.cmake
 --- a/cmake_modules/ThirdpartyToolchain.cmake
