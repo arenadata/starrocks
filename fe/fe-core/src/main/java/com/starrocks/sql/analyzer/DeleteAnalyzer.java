@@ -39,6 +39,8 @@ import com.starrocks.catalog.Table;
 import com.starrocks.catalog.Type;
 import com.starrocks.common.Config;
 import com.starrocks.common.FeConstants;
+import com.starrocks.connector.paimon.PaimonDmlOperation;
+import com.starrocks.connector.paimon.PaimonDmlSupport;
 import com.starrocks.load.Load;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
@@ -198,13 +200,16 @@ public class DeleteAnalyzer {
         analyzeProperties(deleteStatement, session);
 
         TableName tableName = deleteStatement.getTableName();
-        MetaUtils.checkNotSupportCatalog(tableName.getCatalog(), "DELETE");
         Database db = GlobalStateMgr.getCurrentState().getMetadataMgr()
                 .getDb(session, tableName.getCatalog(), tableName.getDb());
         if (db == null) {
             throw new SemanticException("Database %s is not found", tableName.getCatalogAndDb());
         }
         Table table = MetaUtils.getSessionAwareTable(session, null, tableName);
+        if (!table.isPaimonTable()) {
+            MetaUtils.checkNotSupportCatalog(tableName.getCatalog(), "DELETE");
+        }
+        PaimonDmlSupport.requireRowLevelDml(table, session, "DELETE");
 
         if (table instanceof MaterializedView) {
             String msg = String.format("The data of '%s' cannot be deleted because it is a materialized view," +
@@ -212,7 +217,8 @@ public class DeleteAnalyzer {
             throw new SemanticException(msg, tableName.getPos());
         }
 
-        if (!(table instanceof OlapTable && ((OlapTable) table).getKeysType() == KeysType.PRIMARY_KEYS)) {
+        boolean isPrimaryKeyTable = table instanceof OlapTable && ((OlapTable) table).getKeysType() == KeysType.PRIMARY_KEYS;
+        if (!isPrimaryKeyTable && !PaimonDmlSupport.isPaimonPrimaryKeyTable(table)) {
             analyzeNonPrimaryKey(deleteStatement);
             return;
         }
@@ -229,17 +235,22 @@ public class DeleteAnalyzer {
         SelectList selectList = new SelectList();
         for (Column col : table.getBaseSchema()) {
             SelectListItem item;
-            if (col.isKey() || col.isNameWithPrefix(FeConstants.GENERATED_PARTITION_COLUMN_PREFIX)) {
+            if (PaimonDmlSupport.isPaimonPrimaryKeyTable(table) || col.isKey()
+                    || col.isNameWithPrefix(FeConstants.GENERATED_PARTITION_COLUMN_PREFIX)) {
                 item = new SelectListItem(new SlotRef(tableName, col.getName()), col.getName());
             } else {
                 continue;
             }
             selectList.addItem(item);
         }
-        try {
-            selectList.addItem(new SelectListItem(new IntLiteral(1, Type.TINYINT), Load.LOAD_OP_COLUMN));
-        } catch (Exception e) {
-            throw new SemanticException("analyze delete failed", e);
+        if (PaimonDmlSupport.isPaimonPrimaryKeyTable(table)) {
+            PaimonDmlSupport.appendRowKind(selectList, PaimonDmlOperation.DELETE);
+        } else {
+            try {
+                selectList.addItem(new SelectListItem(new IntLiteral(1, Type.TINYINT), Load.LOAD_OP_COLUMN));
+            } catch (Exception e) {
+                throw new SemanticException("analyze delete failed", e);
+            }
         }
 
         Relation relation = new TableRelation(tableName);

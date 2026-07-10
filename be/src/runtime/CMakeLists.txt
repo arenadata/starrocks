@@ -101,6 +101,7 @@ set(RUNTIME_FILES
     command_executor.cpp
     iceberg_table_sink.cpp
     hive_table_sink.cpp
+    paimon_table_sink.cpp
     table_function_table_sink.cpp
     blackhole_table_sink.cpp
     dictionary_cache_sink.cpp

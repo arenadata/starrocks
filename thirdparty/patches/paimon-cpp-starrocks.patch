@@ -1,0 +1,80 @@
+diff --git a/cmake_modules/ThirdpartyToolchain.cmake b/cmake_modules/ThirdpartyToolchain.cmake
+--- a/cmake_modules/ThirdpartyToolchain.cmake
++++ b/cmake_modules/ThirdpartyToolchain.cmake
+@@ -617,10 +617,19 @@ macro(resolve_dependency DEPENDENCY_NAME)
+     if(_paimon_resolved_source STREQUAL "BUNDLED")
+         message(STATUS "Using bundled ${DEPENDENCY_NAME}")
+         paimon_build_dependency(${DEPENDENCY_NAME})
++        if("${DEPENDENCY_NAME}" STREQUAL "Arrow" AND PAIMON_USE_EXTERNAL_ARROW)
++            set(PAIMON_${DEPENDENCY_NAME}_ACTUAL_SOURCE
++                "SYSTEM"
++                CACHE INTERNAL "Actual source for ${DEPENDENCY_NAME}" FORCE)
++            paimon_record_dependency_resolution(
++                ${DEPENDENCY_NAME} "${_paimon_requested_source}" "SYSTEM"
++                "${_paimon_target_name}")
++        else()
+         set(PAIMON_${DEPENDENCY_NAME}_ACTUAL_SOURCE
+             "BUNDLED"
+             CACHE INTERNAL "Actual source for ${DEPENDENCY_NAME}")
+         paimon_record_dependency_resolution(
+             ${DEPENDENCY_NAME} "${_paimon_requested_source}" "BUNDLED"
+             "${_paimon_target_name}")
++        endif()
+     elseif(_paimon_resolved_source STREQUAL "SYSTEM")
+@@ -1435,6 +1435,48 @@ macro(build_orc)
+ endmacro()
+ 
+ macro(build_arrow)
++    if(PAIMON_USE_EXTERNAL_ARROW)
++        message(STATUS "Using StarRocks external Arrow")
++        foreach(_required_var
++                PAIMON_EXTERNAL_ARROW_INCLUDE_DIR
++                PAIMON_EXTERNAL_ARROW_LIBRARY
++                PAIMON_EXTERNAL_ARROW_DATASET_LIBRARY
++                PAIMON_EXTERNAL_ARROW_ACERO_LIBRARY
++                PAIMON_EXTERNAL_ARROW_BUNDLED_DEPENDENCIES_LIBRARY
++                PAIMON_EXTERNAL_PARQUET_LIBRARY)
++            if(NOT EXISTS "${${_required_var}}")
++                message(FATAL_ERROR "${_required_var} does not exist: ${${_required_var}}")
++            endif()
++        endforeach()
++
++        set(ARROW_INCLUDE_DIR "${PAIMON_EXTERNAL_ARROW_INCLUDE_DIR}")
++        add_library(arrow STATIC IMPORTED)
++        add_library(arrow_dataset STATIC IMPORTED)
++        add_library(arrow_acero STATIC IMPORTED)
++        add_library(parquet STATIC IMPORTED)
++        add_library(arrow_bundled_dependencies STATIC IMPORTED)
++        set_target_properties(arrow PROPERTIES
++                              IMPORTED_LOCATION "${PAIMON_EXTERNAL_ARROW_LIBRARY}"
++                              INTERFACE_INCLUDE_DIRECTORIES "${ARROW_INCLUDE_DIR}")
++        set_target_properties(arrow_dataset PROPERTIES
++                              IMPORTED_LOCATION "${PAIMON_EXTERNAL_ARROW_DATASET_LIBRARY}"
++                              INTERFACE_INCLUDE_DIRECTORIES "${ARROW_INCLUDE_DIR}")
++        set_target_properties(arrow_acero PROPERTIES
++                              IMPORTED_LOCATION "${PAIMON_EXTERNAL_ARROW_ACERO_LIBRARY}"
++                              INTERFACE_INCLUDE_DIRECTORIES "${ARROW_INCLUDE_DIR}")
++        set_target_properties(parquet PROPERTIES
++                              IMPORTED_LOCATION "${PAIMON_EXTERNAL_PARQUET_LIBRARY}"
++                              INTERFACE_INCLUDE_DIRECTORIES "${ARROW_INCLUDE_DIR}")
++        set_target_properties(arrow_bundled_dependencies PROPERTIES
++                              IMPORTED_LOCATION "${PAIMON_EXTERNAL_ARROW_BUNDLED_DEPENDENCIES_LIBRARY}"
++                              INTERFACE_INCLUDE_DIRECTORIES "${ARROW_INCLUDE_DIR}")
++        target_link_libraries(arrow_acero INTERFACE arrow)
++        target_link_libraries(arrow_dataset INTERFACE arrow_acero)
++        target_link_libraries(arrow INTERFACE zstd snappy lz4 zlib re2::re2
++                                               arrow_bundled_dependencies)
++        target_link_libraries(parquet INTERFACE zstd snappy lz4 zlib
++                              arrow_bundled_dependencies arrow_dataset)
++    else()
+     message(STATUS "Building Arrow from source")
+ 
+     get_target_property(ARROW_SNAPPY_INCLUDE_DIR snappy INTERFACE_INCLUDE_DIRECTORIES)
+@@ -1606,6 +1648,7 @@ macro(build_arrow)
+                           arrow_bundled_dependencies
+                           arrow_dataset)
+ 
++    endif()
+ endmacro(build_arrow)
+ 
+ macro(build_gtest)

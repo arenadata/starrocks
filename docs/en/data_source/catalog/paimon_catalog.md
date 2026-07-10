@@ -24,6 +24,37 @@ To ensure successful SQL workloads on your Paimon cluster, your StarRocks cluste
 
 You can only use Paimon catalogs to query data. You cannot use Paimon catalogs to drop, delete, or insert data into your Paimon cluster.
 
+### Native C++ reader rollout
+
+The Paimon C++ reader is an opt-in, experimental read path. It applies only to Paimon `DataSplit` scan ranges and only on BEs or CNs built with `-DENABLE_PAIMON_CPP=ON`. It does not add Paimon write, DDL, catalog-management, or parser support.
+
+Use the following independent session variables to control a rollout:
+
+```SQL
+-- Opt in to the C++ reader for eligible logical Paimon data splits.
+SET enable_paimon_cpp_reader = true;
+
+-- Force the established JNI reader. This takes precedence over the C++ opt-in.
+SET paimon_force_jni_reader = true;
+```
+
+Both variables default to `false`. Set `paimon_force_jni_reader = true` for an immediate per-session rollback; it is safe to leave `enable_paimon_cpp_reader` enabled while this override is set. Reset the override with `SET paimon_force_jni_reader = false`.
+
+The planner and backend enforce these capability boundaries:
+
+- Only `DataSplit` ranges can be assigned to the C++ reader. Paimon system-table and other non-`DataSplit` ranges use JNI.
+- A `DataSplit` that Paimon exposes as raw Parquet or ORC files is read by the existing native StarRocks file reader, not by the C++ reader. This raw-file path is selected before the C++/JNI choice.
+- The bundled Paimon C++ configuration enables Parquet and disables ORC. Therefore, do not enable the C++ reader for logical ORC Paimon splits; force JNI for those workloads. ORC raw-file scans remain on the existing native ORC reader.
+- Dynamic-bucket and postpone-bucket tables are not qualified for the C++ reader. Keep them on JNI by setting `paimon_force_jni_reader = true` until their graduation criteria are complete.
+- If a plan requests the C++ reader on a BE or CN that was not built with `ENABLE_PAIMON_CPP`, the backend rejects that range. It does **not** silently switch the range to JNI. Enable the session variable only after every executable BE/CN in the target workload pool has the C++ capability, or use the force-JNI override.
+- A C++ reader runtime error also does not retry the range through JNI. Roll back the session to JNI and resubmit the query after diagnosing the failure.
+
+The supported SQL surface remains read-only: `SHOW DATABASES`, `SHOW TABLES`, `DESC`, `SHOW CREATE TABLE`, and `SELECT` against a `filesystem` or `hive` Paimon catalog. `INSERT INTO <StarRocks table> SELECT ... FROM <Paimon table>` is supported because StarRocks is the write target. `INSERT`, `UPDATE`, `DELETE`, `MERGE`, `CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, and catalog DDL that target a Paimon table are not supported by either reader.
+
+The C++ reader consumes the immutable Paimon split chosen during planning. It neither creates Paimon commits nor participates in Paimon commit atomicity. A failed scan has no Paimon-side recovery action. Retrying a query may plan a newer Paimon snapshot if the table changed; use the appropriate Paimon snapshot/time-travel mechanism when a retry must read a fixed snapshot. The reader does not provide an independent exactly-once or atomic-result-delivery guarantee beyond StarRocks query execution semantics.
+
+For rollout visibility, inspect the external tracer entries named `Paimon.metadata.reader.<table>.{native,jni,cpp}ReaderReadNum` and `Paimon.metadata.reader.<table>.{native,jni,cpp}ReaderReadBytes`. They show the reader selected for planned scan ranges and their planned bytes; they are not per-row success counters. C++ scan profiles also include the `PaimonCpp` section with `ArrowRecordBatches` and `ArrowImportTime`.
+
 ## Paimon to StarRocks data types
 
 | Paimon Type           | StarRocks Type              |

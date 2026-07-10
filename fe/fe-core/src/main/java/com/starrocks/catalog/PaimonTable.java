@@ -147,6 +147,16 @@ public class PaimonTable extends Table {
     }
 
     @Override
+    public boolean supportsUpdate() {
+        return !getPrimaryKeyColumnNames().isEmpty();
+    }
+
+    @Override
+    public boolean supportInsert() {
+        return paimonNativeTable instanceof DataTable;
+    }
+
+    @Override
     public TTableDescriptor toThrift(List<DescriptorTable.ReferencedPartitionInfo> partitions) {
         TPaimonTable tPaimonTable = new TPaimonTable();
         String encodedTable = PaimonScanNode.encodeObjectToString(paimonNativeTable);

@@ -40,6 +40,7 @@ import com.starrocks.plugin.PluginInfo;
 import com.starrocks.scheduler.Constants;
 import com.starrocks.scheduler.Task;
 import com.starrocks.scheduler.TaskManager;
+import com.starrocks.server.CatalogMgr;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.server.WarehouseManager;
 import com.starrocks.sql.analyzer.SemanticException;
@@ -791,7 +792,16 @@ public class DDLStmtExecutor {
         @Override
         public ShowResultSet visitTruncateTableStatement(TruncateTableStmt stmt, ConnectContext context) {
             ErrorReport.wrapWithRuntimeException(() -> {
-                context.getGlobalStateMgr().getLocalMetastore().truncateTable(stmt, context);
+                String catalogName = stmt.getTblRef().getName().getCatalog();
+                if (CatalogMgr.isInternalCatalog(catalogName)) {
+                    context.getGlobalStateMgr().getLocalMetastore().truncateTable(stmt, context);
+                } else {
+                    context.getGlobalStateMgr().getMetadataMgr()
+                            .getOptionalMetadata(catalogName)
+                            .orElseThrow(() -> new DdlException(
+                                    "Invalid catalog " + catalogName + ", ConnectorMetadata doesn't exist"))
+                            .truncateTable(stmt, context);
+                }
             });
             return null;
         }

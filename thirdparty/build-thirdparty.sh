@@ -882,7 +882,9 @@ build_arrow() {
     # so disable jemalloc here and use SystemAllocator.
     #
     # Currently, the standard APIs are hooked in BE, so the jemalloc standard APIs will actually be used.
-    ${CMAKE_CMD} -DARROW_PARQUET=ON -DARROW_JSON=ON -DARROW_IPC=ON -DARROW_USE_GLOG=OFF -DARROW_BUILD_STATIC=ON -DARROW_BUILD_SHARED=OFF \
+    ${CMAKE_CMD} -DARROW_PARQUET=ON -DARROW_JSON=ON -DARROW_IPC=ON \
+    -DARROW_DATASET=ON -DARROW_ACERO=ON -DARROW_COMPUTE=ON \
+    -DARROW_USE_GLOG=OFF -DARROW_BUILD_STATIC=ON -DARROW_BUILD_SHARED=OFF \
     -DARROW_WITH_BROTLI=ON -DARROW_WITH_LZ4=ON -DARROW_WITH_SNAPPY=ON -DARROW_WITH_ZLIB=ON -DARROW_WITH_ZSTD=ON \
     -DARROW_WITH_UTF8PROC=OFF -DARROW_WITH_RE2=OFF \
     -DARROW_JEMALLOC=OFF -DARROW_MIMALLOC=OFF \
@@ -1075,6 +1077,143 @@ build_fmt() {
             -DCMAKE_INSTALL_LIBDIR=lib64 -G "${CMAKE_GENERATOR}" -DFMT_TEST=OFF
     ${BUILD_SYSTEM} -j$PARALLEL
     ${BUILD_SYSTEM} install
+}
+
+# paimon-cpp
+build_paimon_cpp() {
+    check_if_source_exist "$PAIMON_CPP_SOURCE"
+
+    local source_dir="${TP_SOURCE_DIR}/${PAIMON_CPP_SOURCE}"
+    local build_dir="${source_dir}/starrocks_build"
+    local patch_marker="${source_dir}/.starrocks-paimon-cpp-patched"
+
+    if [[ ! -f "${patch_marker}" ]]; then
+        patch -d "${source_dir}" -p1 < "${TP_PATCH_DIR}/paimon-cpp-starrocks.patch"
+        touch "${patch_marker}"
+    fi
+
+    find_static_archive() {
+        local archive_name="$1"
+        local candidate
+        for candidate in \
+            "${TP_INSTALL_DIR}/lib64/lib${archive_name}.a" \
+            "${TP_INSTALL_DIR}/lib/lib${archive_name}.a"; do
+            if [[ -f "${candidate}" ]]; then
+                echo "${candidate}"
+                return 0
+            fi
+        done
+        echo "Required StarRocks static archive was not found: lib${archive_name}.a" >&2
+        return 1
+    }
+
+    local arrow_lib
+    local arrow_dataset_lib
+    local arrow_acero_lib
+    local arrow_bundled_lib
+    local parquet_lib
+    arrow_lib="$(find_static_archive arrow)"
+    arrow_dataset_lib="$(find_static_archive arrow_dataset)"
+    arrow_acero_lib="$(find_static_archive arrow_acero)"
+    arrow_bundled_lib="$(find_static_archive arrow_bundled_dependencies)"
+    parquet_lib="$(find_static_archive parquet)"
+
+    rm -rf "${build_dir}"
+    mkdir -p "${build_dir}"
+    cd "${build_dir}"
+
+    local paimon_cxxflags="-O3 -fno-omit-frame-pointer -fPIC -g -include cstdint ${FILE_PREFIX_MAP_OPTION} -Wno-deprecated-declarations"
+    local paimon_cflags="-O3 -fno-omit-frame-pointer -fPIC -g ${FILE_PREFIX_MAP_OPTION}"
+    if [[ "${KERNEL}" != "Darwin" ]]; then
+        paimon_cxxflags="${paimon_cxxflags} -Wno-nontrivial-memcall"
+    fi
+
+    CXXFLAGS="${paimon_cxxflags}" CFLAGS="${paimon_cflags}" \
+    "${CMAKE_CMD}" -C "${TP_DIR}/paimon-cpp-cache.cmake" \
+        -G "${CMAKE_GENERATOR}" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
+        -DCMAKE_INSTALL_LIBDIR=lib64 \
+        -DPAIMON_EXTERNAL_ARROW_INCLUDE_DIR="${TP_INCLUDE_DIR}" \
+        -DPAIMON_EXTERNAL_ARROW_LIBRARY="${arrow_lib}" \
+        -DPAIMON_EXTERNAL_ARROW_DATASET_LIBRARY="${arrow_dataset_lib}" \
+        -DPAIMON_EXTERNAL_ARROW_ACERO_LIBRARY="${arrow_acero_lib}" \
+        -DPAIMON_EXTERNAL_ARROW_BUNDLED_DEPENDENCIES_LIBRARY="${arrow_bundled_lib}" \
+        -DPAIMON_EXTERNAL_PARQUET_LIBRARY="${parquet_lib}" \
+        "${source_dir}"
+
+    ${BUILD_SYSTEM} -j"${PARALLEL}"
+    ${BUILD_SYSTEM} install
+
+    # Do not let artifacts from an older shared build survive in the common
+    # install prefix.
+    rm -f "${TP_INSTALL_DIR}"/lib/libpaimon*.so \
+          "${TP_INSTALL_DIR}"/lib/libpaimon*.so.* \
+          "${TP_INSTALL_DIR}"/lib/libpaimon*.dylib \
+          "${TP_INSTALL_DIR}"/lib64/libpaimon*.so \
+          "${TP_INSTALL_DIR}"/lib64/libpaimon*.so.* \
+          "${TP_INSTALL_DIR}"/lib64/libpaimon*.dylib
+
+    # paimon-cpp 0.2.0 installs its package files under lib unconditionally.
+    # Mirror them into StarRocks's lib64 CMake prefix used for static archives.
+    mkdir -p "${TP_INSTALL_DIR}/lib64/cmake/Paimon"
+    cp -f "${TP_INSTALL_DIR}/lib/cmake/Paimon/PaimonConfig.cmake" \
+          "${TP_INSTALL_DIR}/lib/cmake/Paimon/PaimonConfigVersion.cmake" \
+          "${TP_INSTALL_DIR}/lib64/cmake/Paimon/"
+
+    install_private_archive() {
+        local installed_name="$1"
+        shift
+        local candidate
+        for candidate in "$@"; do
+            if [[ -f "${candidate}" ]]; then
+                cp -f "${candidate}" "${TP_INSTALL_DIR}/lib64/${installed_name}"
+                return 0
+            fi
+        done
+        echo "Failed to find paimon-cpp private archive for ${installed_name}" >&2
+        return 1
+    }
+
+    mkdir -p "${TP_INSTALL_DIR}/lib64"
+    install_private_archive libfmt_paimon.a \
+        "${build_dir}/fmt_ep-install/lib/libfmt.a" \
+        "${build_dir}/fmt_ep-install/lib64/libfmt.a"
+    install_private_archive libtbb_paimon.a \
+        "${build_dir}/tbb_ep-install/lib/libtbb.a" \
+        "${build_dir}/tbb_ep-install/lib64/libtbb.a"
+    install_private_archive libxxhash_paimon.a \
+        "${build_dir}/release/libxxhash.a"
+    install_private_archive libroaring_bitmap_paimon.a \
+        "${build_dir}/release/libroaring_bitmap.a"
+
+    local expected_archive
+    for expected_archive in \
+        libpaimon.a \
+        libpaimon_local_file_system.a \
+        libpaimon_blob_file_format.a \
+        libpaimon_parquet_file_format.a \
+        libpaimon_file_index.a \
+        libpaimon_global_index.a \
+        libfmt_paimon.a \
+        libtbb_paimon.a \
+        libxxhash_paimon.a \
+        libroaring_bitmap_paimon.a; do
+        if [[ ! -f "${TP_INSTALL_DIR}/lib64/${expected_archive}" ]]; then
+            echo "paimon-cpp install is missing ${expected_archive}" >&2
+            return 1
+        fi
+    done
+    if [[ ! -d "${TP_INCLUDE_DIR}/paimon" ]]; then
+        echo "paimon-cpp install is missing public headers" >&2
+        return 1
+    fi
+    if [[ ! -f "${TP_INSTALL_DIR}/lib64/cmake/Paimon/PaimonConfig.cmake" ]]; then
+        echo "paimon-cpp install is missing PaimonConfig.cmake" >&2
+        return 1
+    fi
+
+    restore_compile_flags
 }
 
 #ryu
@@ -1693,6 +1832,7 @@ declare -a all_packages=(
     croaringbitmap
     cctz
     fmt
+    paimon_cpp
     ryu
     hadoop_src
     jdk

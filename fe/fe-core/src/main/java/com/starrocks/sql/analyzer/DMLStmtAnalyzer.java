@@ -19,6 +19,7 @@ import com.starrocks.sql.ast.AstVisitor;
 import com.starrocks.sql.ast.DeleteStmt;
 import com.starrocks.sql.ast.DmlStmt;
 import com.starrocks.sql.ast.InsertStmt;
+import com.starrocks.sql.ast.MergeStmt;
 import com.starrocks.sql.ast.UpdateStmt;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,6 +52,12 @@ public class DMLStmtAnalyzer {
         @Override
         public Void visitDeleteStatement(DeleteStmt stmt, ConnectContext context) {
             DeleteAnalyzer.analyze(stmt, context);
+            return null;
+        }
+
+        @Override
+        public Void visitMergeStatement(MergeStmt stmt, ConnectContext context) {
+            MergeAnalyzer.analyze(stmt, context);
             return null;
         }
     }

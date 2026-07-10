@@ -28,6 +28,8 @@ import com.starrocks.catalog.MaterializedView;
 import com.starrocks.catalog.OlapTable;
 import com.starrocks.catalog.Table;
 import com.starrocks.catalog.Type;
+import com.starrocks.connector.paimon.PaimonDmlOperation;
+import com.starrocks.connector.paimon.PaimonDmlSupport;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.analyzer.SelectAnalyzer.RewriteAliasVisitor;
@@ -40,7 +42,9 @@ import com.starrocks.sql.ast.Relation;
 import com.starrocks.sql.ast.SelectList;
 import com.starrocks.sql.ast.SelectListItem;
 import com.starrocks.sql.ast.SelectRelation;
+import com.starrocks.sql.ast.SetQualifier;
 import com.starrocks.sql.ast.TableRelation;
+import com.starrocks.sql.ast.UnionRelation;
 import com.starrocks.sql.ast.UpdateStmt;
 import com.starrocks.sql.common.MetaUtils;
 import com.starrocks.sql.common.TypeManager;
@@ -79,6 +83,10 @@ public class UpdateAnalyzer {
             throw new SemanticException("Database %s is not found", tableName.getCatalogAndDb());
         }
         Table table = MetaUtils.getSessionAwareTable(session, null, tableName);
+        PaimonDmlSupport.requireRowLevelDml(table, session, "UPDATE");
+        if (PaimonDmlSupport.isPaimonPrimaryKeyTable(table) && updateStmt.getFromRelations() != null) {
+            throw new SemanticException("Paimon UPDATE does not support FROM to avoid multiple source matches");
+        }
 
         if (table instanceof MaterializedView) {
             throw new SemanticException("The data of '%s' cannot be modified because '%s' is a materialized view,"
@@ -176,6 +184,9 @@ public class UpdateAnalyzer {
                 selectList.addItem(item);
                 assignColumnList.add(col);
             }
+        }
+        if (PaimonDmlSupport.isPaimonPrimaryKeyTable(table)) {
+            PaimonDmlSupport.appendRowKind(selectList, PaimonDmlOperation.UPDATE_AFTER);
         }
 
         if (autoIncrementColumn != null && nullExprInAutoIncrement) {
@@ -275,7 +286,19 @@ public class UpdateAnalyzer {
         if (updateStmt.getCommonTableExpressions() != null) {
             updateStmt.getCommonTableExpressions().forEach(selectRelation::addCTERelation);
         }
-        QueryStatement queryStatement = new QueryStatement(selectRelation);
+        QueryStatement queryStatement;
+        if (PaimonDmlSupport.isPaimonPrimaryKeyTable(table)) {
+            SelectList beforeList = new SelectList();
+            for (Column column : table.getBaseSchema()) {
+                beforeList.addItem(new SelectListItem(new SlotRef(tableName, column.getName()), column.getName()));
+            }
+            PaimonDmlSupport.appendRowKind(beforeList, PaimonDmlOperation.UPDATE_BEFORE);
+            SelectRelation before = new SelectRelation(beforeList, new TableRelation(tableName),
+                    updateStmt.getWherePredicate() == null ? null : updateStmt.getWherePredicate().clone(), null, null);
+            queryStatement = new QueryStatement(new UnionRelation(List.of(before, selectRelation), SetQualifier.ALL));
+        } else {
+            queryStatement = new QueryStatement(selectRelation);
+        }
         queryStatement.setIsExplain(updateStmt.isExplain(), updateStmt.getExplainLevel());
         new QueryAnalyzer(session).analyze(queryStatement);
 
@@ -283,7 +306,9 @@ public class UpdateAnalyzer {
         updateStmt.setQueryStatement(queryStatement);
 
         List<Expr> outputExpression = queryStatement.getQueryRelation().getOutputExpression();
-        Preconditions.checkState(outputExpression.size() == assignColumnList.size());
+        int expectedOutputExpressionSize = assignColumnList.size()
+                + (PaimonDmlSupport.isPaimonPrimaryKeyTable(table) ? 1 : 0);
+        Preconditions.checkState(outputExpression.size() == expectedOutputExpressionSize);
         if (!updateStmt.usePartialUpdate()) {
             Preconditions.checkState(table.getBaseSchema().size() == assignColumnList.size());
         }
@@ -293,6 +318,9 @@ public class UpdateAnalyzer {
             Column c = assignColumnList.get(i);
             castOutputExpressions.add(TypeManager.addCastExpr(e, c.getType()));
         }
-        ((SelectRelation) queryStatement.getQueryRelation()).setOutputExpr(castOutputExpressions);
+        if (PaimonDmlSupport.isPaimonPrimaryKeyTable(table)) {
+            castOutputExpressions.add(outputExpression.get(outputExpression.size() - 1));
+        }
+        selectRelation.setOutputExpr(castOutputExpressions);
     }
 }

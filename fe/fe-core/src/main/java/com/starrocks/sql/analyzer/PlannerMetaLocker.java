@@ -31,6 +31,7 @@ import com.starrocks.sql.ast.AlterTableStmt;
 import com.starrocks.sql.ast.AlterViewStmt;
 import com.starrocks.sql.ast.AstTraverser;
 import com.starrocks.sql.ast.DeleteStmt;
+import com.starrocks.sql.ast.MergeStmt;
 import com.starrocks.sql.ast.InsertStmt;
 import com.starrocks.sql.ast.StatementBase;
 import com.starrocks.sql.ast.TableRelation;
@@ -210,6 +211,13 @@ public class PlannerMetaLocker implements AutoCloseable {
             Pair<Database, Table> dbAndTable = resolveTable(session, node.getTableName());
             put(dbAndTable);
             return super.visitDeleteStatement(node, context);
+        }
+
+        @Override
+        public Void visitMergeStatement(MergeStmt node, Void context) {
+            Pair<Database, Table> dbAndTable = resolveTable(session, node.getTableName());
+            put(dbAndTable);
+            return super.visitMergeStatement(node, context);
         }
 
         @Override

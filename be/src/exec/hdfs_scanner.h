@@ -219,6 +219,9 @@ struct HdfsScannerParams {
 
     // The FileSystem used to open the file to be scanned
     FileSystem* fs = nullptr;
+    // Cloud credentials used by readers that open additional table metadata or
+    // manifest files outside the physical data-file scan range.
+    const TCloudConfiguration* cloud_configuration = nullptr;
     // The file to scan
     std::string path;
     // The file size. -1 means unknown.

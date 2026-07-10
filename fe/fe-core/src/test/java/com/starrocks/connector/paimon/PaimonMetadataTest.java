@@ -59,6 +59,8 @@ import com.starrocks.sql.optimizer.operator.scalar.ConstantOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
 import com.starrocks.sql.optimizer.rule.transformation.ExternalScanPartitionPruneRule;
 import com.starrocks.sql.parser.NodePosition;
+import com.starrocks.thrift.TPaimonCommitInfo;
+import com.starrocks.thrift.TSinkCommitInfo;
 import com.starrocks.utframe.UtFrameUtils;
 import mockit.Expectations;
 import mockit.Mock;
@@ -536,6 +538,49 @@ public class PaimonMetadataTest {
     public void testGetCloudConfiguration() {
         CloudConfiguration cc = metadata.getCloudConfiguration();
         assertEquals(cc.getCloudType(), CloudType.DEFAULT);
+    }
+
+    @Test
+    public void testRejectsUnsupportedCommitEnvelopeVersionBeforeWriting() {
+        TPaimonCommitInfo envelope = new TPaimonCommitInfo();
+        envelope.setSerializer_version(2);
+        envelope.setPayload(new byte[] {1});
+        TSinkCommitInfo commitInfo = new TSinkCommitInfo();
+        commitInfo.setPaimon_commit_info(envelope);
+
+        StarRocksConnectorException exception = Assertions.assertThrows(StarRocksConnectorException.class,
+                () -> metadata.finishSink("db1", "tbl1", List.of(commitInfo), null));
+
+        Assertions.assertTrue(exception.getMessage().contains("serializer version"));
+    }
+
+    @Test
+    public void testRejectsCommitEnvelopeWithInvalidChecksumBeforeWriting() {
+        TPaimonCommitInfo envelope = new TPaimonCommitInfo();
+        envelope.setSerializer_version(1);
+        envelope.setPayload(new byte[] {1, 2, 3});
+        envelope.setChecksum("not-the-payload-sha256");
+        TSinkCommitInfo commitInfo = new TSinkCommitInfo();
+        commitInfo.setPaimon_commit_info(envelope);
+
+        StarRocksConnectorException exception = Assertions.assertThrows(StarRocksConnectorException.class,
+                () -> metadata.finishSink("db1", "tbl1", List.of(commitInfo), null));
+
+        Assertions.assertTrue(exception.getMessage().contains("checksum"));
+    }
+
+    @Test
+    public void testAbortRejectsEmptyCommitEnvelopeBeforeWriting() {
+        TPaimonCommitInfo envelope = new TPaimonCommitInfo();
+        envelope.setSerializer_version(1);
+        envelope.setPayload(new byte[0]);
+        TSinkCommitInfo commitInfo = new TSinkCommitInfo();
+        commitInfo.setPaimon_commit_info(envelope);
+
+        StarRocksConnectorException exception = Assertions.assertThrows(StarRocksConnectorException.class,
+                () -> metadata.abortSink("db1", "tbl1", List.of(commitInfo)));
+
+        Assertions.assertTrue(exception.getMessage().contains("empty"));
     }
 
     @Test

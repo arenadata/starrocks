@@ -23,6 +23,7 @@ import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Database;
 import com.starrocks.catalog.OlapTable;
 import com.starrocks.catalog.Partition;
+import com.starrocks.catalog.PaimonTable;
 import com.starrocks.catalog.Type;
 import com.starrocks.common.FeConstants;
 import com.starrocks.common.StarRocksException;
@@ -57,6 +58,10 @@ public class DeletePlanner {
             return null;
         }
         QueryRelation query = deleteStatement.getQueryStatement().getQueryRelation();
+        if (deleteStatement.getTable() instanceof PaimonTable) {
+            return PaimonDmlPlanner.plan(query, (PaimonTable) deleteStatement.getTable(),
+                    com.starrocks.connector.paimon.PaimonDmlOperation.DELETE, session);
+        }
         List<String> colNames = query.getColumnOutputNames();
         ColumnRefFactory columnRefFactory = new ColumnRefFactory();
         LogicalPlan logicalPlan = new RelationTransformer(columnRefFactory, session).transform(query);

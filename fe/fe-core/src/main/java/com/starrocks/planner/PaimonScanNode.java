@@ -42,6 +42,7 @@ import com.starrocks.thrift.THdfsScanNode;
 import com.starrocks.thrift.THdfsScanRange;
 import com.starrocks.thrift.TNetworkAddress;
 import com.starrocks.thrift.TPaimonDeletionFile;
+import com.starrocks.thrift.TPaimonReaderType;
 import com.starrocks.thrift.TPlanNode;
 import com.starrocks.thrift.TPlanNodeType;
 import com.starrocks.thrift.TScanRange;
@@ -51,12 +52,15 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.paimon.data.BinaryRow;
 import org.apache.paimon.io.DataFileMeta;
+import org.apache.paimon.io.DataOutputViewStreamWrapper;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.table.source.DeletionFile;
 import org.apache.paimon.table.source.RawFile;
 import org.apache.paimon.table.source.Split;
 import org.apache.paimon.utils.InstantiationUtil;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
@@ -148,7 +152,8 @@ public class PaimonScanNode extends ScanNode {
             return;
         }
 
-        boolean forceJNIReader = ConnectContext.get().getSessionVariable().getPaimonForceJNIReader();
+        SessionVariable sessionVariable = ConnectContext.get().getSessionVariable();
+        boolean forceJNIReader = sessionVariable.getPaimonForceJNIReader();
         Map<BinaryRow, Long> selectedPartitions = Maps.newHashMap();
         for (Split split : splits) {
             if (split instanceof DataSplit) {
@@ -168,11 +173,13 @@ public class PaimonScanNode extends ScanNode {
                         }
                     } else {
                         long totalFileLength = getTotalFileLength(dataSplit);
-                        addSplitScanRangeLocations(dataSplit, predicateInfo, totalFileLength);
+                        addSplitScanRangeLocations(dataSplit, predicateInfo, totalFileLength,
+                                selectPaimonReaderType(dataSplit, sessionVariable));
                     }
                 } else {
                     long totalFileLength = getTotalFileLength(dataSplit);
-                    addSplitScanRangeLocations(dataSplit, predicateInfo, totalFileLength);
+                    addSplitScanRangeLocations(dataSplit, predicateInfo, totalFileLength,
+                            selectPaimonReaderType(dataSplit, sessionVariable));
                 }
                 BinaryRow partitionValue = dataSplit.partition();
                 if (!selectedPartitions.containsKey(partitionValue)) {
@@ -181,34 +188,65 @@ public class PaimonScanNode extends ScanNode {
             } else {
                 // paimon system table
                 long length = getEstimatedLength(split.rowCount(), tupleDescriptor);
-                addSplitScanRangeLocations(split, predicateInfo, length);
+                addSplitScanRangeLocations(split, predicateInfo, length, TPaimonReaderType.PAIMON_JNI);
             }
 
         }
         scanNodePredicates.setSelectedPartitionIds(selectedPartitions.values());
-        traceJniMetrics();
+        traceReaderMetrics();
         traceDeletionVectorMetrics();
     }
 
-    private void traceJniMetrics() {
-        int totalReaderCount = 0, jniReaderCount = 0;
-        long totalReaderLength = 0, jniReaderLength = 0;
+    TPaimonReaderType selectPaimonReaderType(Split split, SessionVariable sessionVariable) {
+        if (sessionVariable.getPaimonForceJNIReader() || !(split instanceof DataSplit)) {
+            return TPaimonReaderType.PAIMON_JNI;
+        }
+        return sessionVariable.isEnablePaimonCppReader()
+                ? TPaimonReaderType.PAIMON_CPP : TPaimonReaderType.PAIMON_JNI;
+    }
+
+    private void traceReaderMetrics() {
+        int nativeReaderCount = 0;
+        int jniReaderCount = 0;
+        int cppReaderCount = 0;
+        long nativeReaderLength = 0;
+        long jniReaderLength = 0;
+        long cppReaderLength = 0;
 
         for (TScanRangeLocations rangeLocation : scanRangeLocationsList) {
             THdfsScanRange hdfsScanRange = rangeLocation.getScan_range().getHdfs_scan_range();
-            if (hdfsScanRange.use_paimon_jni_reader) {
-                jniReaderCount++;
-                jniReaderLength += hdfsScanRange.length;
+            TPaimonReaderType readerType;
+            if (hdfsScanRange.isSetPaimon_reader_type()) {
+                readerType = hdfsScanRange.getPaimon_reader_type();
+            } else if (hdfsScanRange.use_paimon_jni_reader) {
+                readerType = TPaimonReaderType.PAIMON_JNI;
+            } else {
+                readerType = TPaimonReaderType.PAIMON_NATIVE;
             }
-            totalReaderCount++;
-            totalReaderLength += hdfsScanRange.length;
+            switch (readerType) {
+                case PAIMON_JNI:
+                    jniReaderCount++;
+                    jniReaderLength += hdfsScanRange.length;
+                    break;
+                case PAIMON_CPP:
+                    cppReaderCount++;
+                    cppReaderLength += hdfsScanRange.length;
+                    break;
+                case PAIMON_NATIVE:
+                default:
+                    nativeReaderCount++;
+                    nativeReaderLength += hdfsScanRange.length;
+                    break;
+            }
         }
 
         String prefix = "Paimon.metadata.reader." + paimonTable.getCatalogTableName() + ".";
-        Tracers.record(EXTERNAL, prefix + "nativeReaderReadNum", String.valueOf(totalReaderCount - jniReaderCount));
-        Tracers.record(EXTERNAL, prefix + "nativeReaderReadBytes", (totalReaderLength - jniReaderLength) + " B");
+        Tracers.record(EXTERNAL, prefix + "nativeReaderReadNum", String.valueOf(nativeReaderCount));
+        Tracers.record(EXTERNAL, prefix + "nativeReaderReadBytes", nativeReaderLength + " B");
         Tracers.record(EXTERNAL, prefix + "jniReaderReadNum", String.valueOf(jniReaderCount));
         Tracers.record(EXTERNAL, prefix + "jniReaderReadBytes", jniReaderLength + " B");
+        Tracers.record(EXTERNAL, prefix + "cppReaderReadNum", String.valueOf(cppReaderCount));
+        Tracers.record(EXTERNAL, prefix + "cppReaderReadBytes", cppReaderLength + " B");
     }
 
     private void traceDeletionVectorMetrics() {
@@ -283,6 +321,7 @@ public class PaimonScanNode extends ScanNode {
 
         THdfsScanRange hdfsScanRange = new THdfsScanRange();
         hdfsScanRange.setUse_paimon_jni_reader(false);
+        hdfsScanRange.setPaimon_reader_type(TPaimonReaderType.PAIMON_NATIVE);
         hdfsScanRange.setFull_path(rawFile.path());
         hdfsScanRange.setOffset(offset);
         hdfsScanRange.setFile_length(rawFile.length());
@@ -308,11 +347,27 @@ public class PaimonScanNode extends ScanNode {
     }
 
     public void addSplitScanRangeLocations(Split split, String predicateInfo, long totalFileLength) {
+        addSplitScanRangeLocations(split, predicateInfo, totalFileLength, TPaimonReaderType.PAIMON_JNI);
+    }
+
+    public void addSplitScanRangeLocations(Split split, String predicateInfo, long totalFileLength,
+                                           TPaimonReaderType readerType) {
+        Preconditions.checkArgument(readerType != TPaimonReaderType.PAIMON_NATIVE,
+                "A logical Paimon split requires the JNI or C++ reader");
+        Preconditions.checkArgument(readerType != TPaimonReaderType.PAIMON_CPP || split instanceof DataSplit,
+                "The Paimon C++ reader requires a DataSplit");
         TScanRangeLocations scanRangeLocations = new TScanRangeLocations();
 
         THdfsScanRange hdfsScanRange = new THdfsScanRange();
-        hdfsScanRange.setUse_paimon_jni_reader(true);
-        hdfsScanRange.setPaimon_split_info(encodeObjectToString(split));
+        hdfsScanRange.setUse_paimon_jni_reader(readerType == TPaimonReaderType.PAIMON_JNI);
+        hdfsScanRange.setPaimon_reader_type(readerType);
+        if (readerType == TPaimonReaderType.PAIMON_CPP) {
+            hdfsScanRange.setPaimon_split_info(encodeDataSplitToString((DataSplit) split));
+            hdfsScanRange.setPaimon_table_path(paimonTable.getTableLocation());
+            hdfsScanRange.setPaimon_table_options(paimonTable.getProperties());
+        } else {
+            hdfsScanRange.setPaimon_split_info(encodeObjectToString(split));
+        }
         hdfsScanRange.setPaimon_predicate_info(predicateInfo);
         hdfsScanRange.setFile_length(totalFileLength);
         hdfsScanRange.setLength(totalFileLength);
@@ -434,6 +489,17 @@ public class PaimonScanNode extends ScanNode {
             return new String(BASE64_ENCODER.encode(bytes), UTF_8);
         } catch (Exception e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static String encodeDataSplitToString(DataSplit split) {
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            DataOutputViewStreamWrapper dataOutput = new DataOutputViewStreamWrapper(output);
+            split.serialize(dataOutput);
+            return Base64.getEncoder().encodeToString(output.toByteArray());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to serialize DataSplit using Paimon native format", e);
         }
     }
 }

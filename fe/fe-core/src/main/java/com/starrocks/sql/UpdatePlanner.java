@@ -23,6 +23,7 @@ import com.starrocks.analysis.TupleDescriptor;
 import com.starrocks.catalog.Column;
 import com.starrocks.catalog.Database;
 import com.starrocks.catalog.OlapTable;
+import com.starrocks.catalog.PaimonTable;
 import com.starrocks.catalog.Partition;
 import com.starrocks.catalog.Table;
 import com.starrocks.catalog.Type;
@@ -73,6 +74,10 @@ public class UpdatePlanner {
 
     public ExecPlan plan(UpdateStmt updateStmt, ConnectContext session) {
         QueryRelation query = updateStmt.getQueryStatement().getQueryRelation();
+        if (updateStmt.getTable() instanceof PaimonTable) {
+            return PaimonDmlPlanner.plan(query, (PaimonTable) updateStmt.getTable(),
+                    com.starrocks.connector.paimon.PaimonDmlOperation.UPDATE_AFTER, session);
+        }
         List<String> colNames = query.getColumnOutputNames();
         ColumnRefFactory columnRefFactory = new ColumnRefFactory();
         LogicalPlan logicalPlan = new RelationTransformer(columnRefFactory, session).transform(query);
