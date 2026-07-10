@@ -106,7 +106,6 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
@@ -124,6 +123,7 @@ import static com.starrocks.sql.optimizer.Utils.getLongFromDateTime;
 
 public class PaimonMetadata implements ConnectorMetadata {
     private static final Logger LOG = LogManager.getLogger(PaimonMetadata.class);
+    private static final CommitMessageSerializer COMMIT_MESSAGE_SERIALIZER = new CommitMessageSerializer();
 
     public static final String PAIMON_PARTITION_NULL_VALUE = "null";
     private final Catalog paimonNativeCatalog;
@@ -185,6 +185,8 @@ public class PaimonMetadata implements ConnectorMetadata {
             invalidateDatabaseDdlCaches(dbName);
         } catch (Catalog.DatabaseNotExistException e) {
             throw new MetaNotFoundException("Paimon database does not exist: " + dbName);
+        } catch (Catalog.DatabaseNotEmptyException e) {
+            throw new DdlException("Paimon database is not empty: " + dbName, e);
         } catch (RuntimeException e) {
             throw new DdlException("Failed to drop Paimon database " + dbName + ": " + e.getMessage(), e);
         }
@@ -272,6 +274,10 @@ public class PaimonMetadata implements ConnectorMetadata {
             paimonNativeCatalog.renameTable(source, target, false);
             invalidateDdlCaches(source.getDatabaseName(), source.getTableName());
             invalidateDdlCaches(target.getDatabaseName(), target.getTableName());
+        } catch (Catalog.TableNotExistException e) {
+            throw new DdlException("Paimon table does not exist: " + source, e);
+        } catch (Catalog.TableAlreadyExistException e) {
+            throw new DdlException("Paimon table already exists: " + target, e);
         } catch (RuntimeException e) {
             throw new DdlException("Failed to rename Paimon table " + source + ": " + e.getMessage(), e);
         }
@@ -759,10 +765,10 @@ public class PaimonMetadata implements ConnectorMetadata {
         try {
             org.apache.paimon.table.Table table = paimonNativeCatalog.getTable(identifier);
             BatchWriteBuilder writeBuilder = table.newBatchWriteBuilder();
-            BatchTableCommit commit = writeBuilder.newCommit();
             if (overwrite) {
-                commit.withOverwrite(Collections.emptyMap());
+                writeBuilder = writeBuilder.withOverwrite();
             }
+            BatchTableCommit commit = writeBuilder.newCommit();
             commit.commit(messages);
             committed.add(commitKey);
             invalidateDdlCaches(dbName, tableName);
@@ -810,7 +816,7 @@ public class PaimonMetadata implements ConnectorMetadata {
                 throw new StarRocksConnectorException("Paimon commit payload is missing its envelope identity");
             }
             if (!commitInfo.isSetSerializer_version() || commitInfo.getSerializer_version() < 0 ||
-                    commitInfo.getSerializer_version() > CommitMessageSerializer.INSTANCE.getVersion()) {
+                    commitInfo.getSerializer_version() > CommitMessageSerializer.CURRENT_VERSION) {
                 throw new StarRocksConnectorException(
                         "Unsupported Paimon commit payload serializer version %s", commitInfo.getSerializer_version());
             }
@@ -856,7 +862,7 @@ public class PaimonMetadata implements ConnectorMetadata {
                 throw new StarRocksConnectorException("Paimon commit payload checksum does not match");
             }
             try {
-                messages.addAll(CommitMessageSerializer.INSTANCE.deserializeList(first.getSerializer_version(),
+                messages.addAll(COMMIT_MESSAGE_SERIALIZER.deserializeList(first.getSerializer_version(),
                         new DataInputViewStreamWrapper(new ByteArrayInputStream(payload))));
             } catch (StarRocksConnectorException e) {
                 throw e;

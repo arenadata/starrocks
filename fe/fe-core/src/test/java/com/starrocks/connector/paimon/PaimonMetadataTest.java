@@ -92,6 +92,7 @@ import org.apache.paimon.table.sink.BatchTableCommit;
 import org.apache.paimon.table.sink.BatchTableWrite;
 import org.apache.paimon.table.sink.BatchWriteBuilder;
 import org.apache.paimon.table.sink.CommitMessage;
+import org.apache.paimon.table.sink.CommitMessageSerializer;
 import org.apache.paimon.table.source.DataSplit;
 import org.apache.paimon.table.source.InnerTableScan;
 import org.apache.paimon.table.source.ReadBuilder;
@@ -543,44 +544,55 @@ public class PaimonMetadataTest {
     @Test
     public void testRejectsUnsupportedCommitEnvelopeVersionBeforeWriting() {
         TPaimonCommitInfo envelope = new TPaimonCommitInfo();
-        envelope.setSerializer_version(2);
+        envelope.setWriter_id("writer-1");
+        envelope.setSequence(0);
+        envelope.setChecksum("dummy");
+        envelope.setSerializer_version(CommitMessageSerializer.CURRENT_VERSION + 1);
         envelope.setPayload(new byte[] {1});
         TSinkCommitInfo commitInfo = new TSinkCommitInfo();
         commitInfo.setPaimon_commit_info(envelope);
 
-        StarRocksConnectorException exception = Assertions.assertThrows(StarRocksConnectorException.class,
+        StarRocksConnectorException exception = org.junit.jupiter.api.Assertions.assertThrows(
+                StarRocksConnectorException.class,
                 () -> metadata.finishSink("db1", "tbl1", List.of(commitInfo), null));
 
-        Assertions.assertTrue(exception.getMessage().contains("serializer version"));
+        org.junit.jupiter.api.Assertions.assertTrue(exception.getMessage().contains("serializer version"));
     }
 
     @Test
     public void testRejectsCommitEnvelopeWithInvalidChecksumBeforeWriting() {
         TPaimonCommitInfo envelope = new TPaimonCommitInfo();
+        envelope.setWriter_id("writer-1");
+        envelope.setSequence(0);
         envelope.setSerializer_version(1);
         envelope.setPayload(new byte[] {1, 2, 3});
         envelope.setChecksum("not-the-payload-sha256");
         TSinkCommitInfo commitInfo = new TSinkCommitInfo();
         commitInfo.setPaimon_commit_info(envelope);
 
-        StarRocksConnectorException exception = Assertions.assertThrows(StarRocksConnectorException.class,
+        StarRocksConnectorException exception = org.junit.jupiter.api.Assertions.assertThrows(
+                StarRocksConnectorException.class,
                 () -> metadata.finishSink("db1", "tbl1", List.of(commitInfo), null));
 
-        Assertions.assertTrue(exception.getMessage().contains("checksum"));
+        org.junit.jupiter.api.Assertions.assertTrue(exception.getMessage().contains("checksum"));
     }
 
     @Test
     public void testAbortRejectsEmptyCommitEnvelopeBeforeWriting() {
         TPaimonCommitInfo envelope = new TPaimonCommitInfo();
+        envelope.setWriter_id("writer-1");
+        envelope.setSequence(0);
+        envelope.setChecksum("dummy");
         envelope.setSerializer_version(1);
         envelope.setPayload(new byte[0]);
         TSinkCommitInfo commitInfo = new TSinkCommitInfo();
         commitInfo.setPaimon_commit_info(envelope);
 
-        StarRocksConnectorException exception = Assertions.assertThrows(StarRocksConnectorException.class,
+        StarRocksConnectorException exception = org.junit.jupiter.api.Assertions.assertThrows(
+                StarRocksConnectorException.class,
                 () -> metadata.abortSink("db1", "tbl1", List.of(commitInfo)));
 
-        Assertions.assertTrue(exception.getMessage().contains("empty"));
+        org.junit.jupiter.api.Assertions.assertTrue(exception.getMessage().contains("empty"));
     }
 
     @Test

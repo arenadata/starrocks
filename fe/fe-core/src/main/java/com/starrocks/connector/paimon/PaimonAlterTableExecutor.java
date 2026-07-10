@@ -70,6 +70,14 @@ public class PaimonAlterTableExecutor extends ConnectorAlterTableExecutor {
             } else if (!schemaChanges.isEmpty()) {
                 catalog.alterTable(identifier, schemaChanges, false);
             }
+        } catch (Catalog.TableNotExistException e) {
+            throw new DdlException("Paimon table " + identifier + " does not exist", e);
+        } catch (Catalog.TableAlreadyExistException e) {
+            throw new DdlException("Paimon table already exists: " + e.getMessage(), e);
+        } catch (Catalog.ColumnAlreadyExistException e) {
+            throw new DdlException("Paimon column already exists: " + e.getMessage(), e);
+        } catch (Catalog.ColumnNotExistException e) {
+            throw new DdlException("Paimon column does not exist: " + e.getMessage(), e);
         } catch (StarRocksConnectorException e) {
             throw new DdlException(e.getMessage(), e.getCause());
         } catch (RuntimeException e) {
