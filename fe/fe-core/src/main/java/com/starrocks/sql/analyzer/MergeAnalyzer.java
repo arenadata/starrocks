@@ -14,10 +14,10 @@
 
 package com.starrocks.sql.analyzer;
 
-import com.starrocks.analysis.CaseExpr;
-import com.starrocks.analysis.CaseWhenClause;
 import com.starrocks.analysis.BinaryPredicate;
 import com.starrocks.analysis.BinaryType;
+import com.starrocks.analysis.CaseExpr;
+import com.starrocks.analysis.CaseWhenClause;
 import com.starrocks.analysis.CompoundPredicate;
 import com.starrocks.analysis.Expr;
 import com.starrocks.analysis.IsNullPredicate;
@@ -32,13 +32,13 @@ import com.starrocks.qe.ConnectContext;
 import com.starrocks.sql.ast.ColumnAssignment;
 import com.starrocks.sql.ast.JoinRelation;
 import com.starrocks.sql.ast.MergeStmt;
-import com.starrocks.sql.ast.QueryStatement;
 import com.starrocks.sql.ast.QueryRelation;
+import com.starrocks.sql.ast.QueryStatement;
 import com.starrocks.sql.ast.Relation;
-import com.starrocks.sql.ast.SetQualifier;
 import com.starrocks.sql.ast.SelectList;
 import com.starrocks.sql.ast.SelectListItem;
 import com.starrocks.sql.ast.SelectRelation;
+import com.starrocks.sql.ast.SetQualifier;
 import com.starrocks.sql.ast.TableRelation;
 import com.starrocks.sql.ast.UnionRelation;
 import com.starrocks.sql.common.MetaUtils;
