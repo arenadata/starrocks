@@ -1723,15 +1723,34 @@ build_paimon_cpp() {
     mkdir -p "${BUILD_DIR}"
     cd "${BUILD_DIR}"
 
-    local paimon_linker_flags="-L${TP_LIB_DIR} -lbrotlienc -lbrotlidec -lbrotlicommon -llzma"
+    # Brotli installs to lib64 on Linux and lib on Darwin. CMAKE_*_LINKER_FLAGS
+    # are also used for CMake's compiler ABI tests, so -L must resolve.
+    local paimon_lib_dirs=()
+    if [[ -d "${TP_INSTALL_DIR}/lib64" ]]; then
+        paimon_lib_dirs+=("-L${TP_INSTALL_DIR}/lib64")
+    fi
+    if [[ -d "${TP_LIB_DIR}" ]]; then
+        paimon_lib_dirs+=("-L${TP_LIB_DIR}")
+    fi
+    local paimon_linker_flags="${paimon_lib_dirs[*]} -lbrotlienc -lbrotlidec -lbrotlicommon"
+    # Optional: only link lzma when present (not required for paimon-cpp itself).
+    if [[ -f "${TP_INSTALL_DIR}/lib64/liblzma.a" || -f "${TP_LIB_DIR}/liblzma.a" ]]; then
+        paimon_linker_flags+=" -llzma"
+    fi
 
-    CXXFLAGS="-Wno-nontrivial-memcall" \
+    # Arrow 19 deprecates out-param GetRecordBatchReader; paimon still uses it.
+    # Release uses BUILD_WARNING_LEVEL=PRODUCTION (-Werror without the CHECKIN
+    # -Wno-deprecated-declarations on GCC), so suppress here until the Result API is adopted.
+    local paimon_cxxflags="-Wno-nontrivial-memcall -Wno-deprecated-declarations"
+    CXXFLAGS="${paimon_cxxflags}" \
     ${CMAKE_CMD} -C "${TP_DIR}/paimon-cpp-cache.cmake" \
         -G "${CMAKE_GENERATOR}" \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_INSTALL_PREFIX="${TP_INSTALL_DIR}" \
         -DCMAKE_CXX_STANDARD=17 \
         -DCMAKE_POLICY_VERSION_MINIMUM=3.5 \
+        -DCMAKE_CXX_FLAGS="${paimon_cxxflags}" \
+        -DPAIMON_CXXFLAGS="${paimon_cxxflags}" \
         -DPAIMON_BUILD_SHARED=OFF \
         -DPAIMON_BUILD_STATIC=ON \
         -DPAIMON_BUILD_TESTS=OFF \
