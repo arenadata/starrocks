@@ -110,8 +110,8 @@ Status PaimonTableSink::_open_native_writer(RuntimeState* state) {
 #ifndef ENABLE_PAIMON_CPP
     return Status::NotSupported("Paimon native writer requires ENABLE_PAIMON_CPP");
 #else
-    ASSIGN_OR_RETURN(const PaimonWriterImplementation writer, select_paimon_writer(_sink.writer_type));
-    if (writer != PaimonWriterImplementation::CPP) {
+    ASSIGN_OR_RETURN(const PaimonWriterImplementation writer_impl, select_paimon_writer(_sink.writer_type));
+    if (writer_impl != PaimonWriterImplementation::CPP) {
         return Status::NotSupported("Paimon JNI writer was selected but no JNI writer implementation is installed");
     }
     if (_sink.table_location.empty()) return Status::InvalidArgument("Paimon sink requires table location");
