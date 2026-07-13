@@ -104,6 +104,8 @@ StatusOr<std::shared_ptr<paimon::Split>> deserialize_paimon_split(
     return std::move(result).value();
 }
 
+PaimonCppScanner::PaimonCppScanner() = default;
+
 PaimonCppScanner::~PaimonCppScanner() {
     do_close(_runtime_state);
 }

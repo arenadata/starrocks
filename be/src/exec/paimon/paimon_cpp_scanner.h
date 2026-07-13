@@ -50,7 +50,7 @@ StatusOr<std::shared_ptr<paimon::Split>> deserialize_paimon_split(
 
 class PaimonCppScanner final : public HdfsScanner {
 public:
-    PaimonCppScanner() = default;
+    PaimonCppScanner();
     ~PaimonCppScanner() override;
 
     Status do_init(RuntimeState* runtime_state, const HdfsScannerParams& scanner_params) override;
