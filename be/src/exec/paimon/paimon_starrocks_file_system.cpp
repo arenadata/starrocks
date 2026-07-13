@@ -577,8 +577,9 @@ StatusOr<PaimonStarRocksFileSystem::ResolvedPath> PaimonStarRocksFileSystem::_re
     if (_has_cloud_configuration) {
         fs_options.cloud_configuration = &_cloud_configuration;
     }
-    ASSIGN_OR_RETURN(auto unique_fs, FileSystem::CreateUniqueFromString(parsed.normalized, fs_options));
-    std::shared_ptr<FileSystem> fs(std::move(unique_fs));
+    ASSIGN_OR_RETURN(auto unique_fs,
+                     ::starrocks::FileSystem::CreateUniqueFromString(parsed.normalized, fs_options));
+    std::shared_ptr<::starrocks::FileSystem> fs(std::move(unique_fs));
     {
         std::lock_guard lock(_fs_mutex);
         auto [it, inserted] = _file_systems.emplace(key, fs);
@@ -611,7 +612,7 @@ paimon::Result<std::unique_ptr<paimon::OutputStream>> PaimonStarRocksFileSystem:
         return to_paimon_status(resolved.status(), "create " + redact_sensitive(path));
     }
 
-    if (resolved->fs->type() != FileSystem::S3) {
+    if (resolved->fs->type() != ::starrocks::FileSystem::S3) {
         const std::string parent = parent_path(resolved->path);
         if (!parent.empty()) {
             Status status = retry_operation(_runtime_state, _max_retries, _retry_delay_ms, "paimon mkdir",
@@ -623,7 +624,8 @@ paimon::Result<std::unique_ptr<paimon::OutputStream>> PaimonStarRocksFileSystem:
     }
 
     WritableFileOptions write_options;
-    write_options.mode = overwrite ? FileSystem::CREATE_OR_OPEN_WITH_TRUNCATE : FileSystem::MUST_CREATE;
+    write_options.mode = overwrite ? ::starrocks::FileSystem::CREATE_OR_OPEN_WITH_TRUNCATE
+                                   : ::starrocks::FileSystem::MUST_CREATE;
     // Creation is not retried: an ambiguous remote failure followed by MUST_CREATE
     // could turn a successful first attempt into a false AlreadyExist response.
     auto file = resolved->fs->new_writable_file(write_options, resolved->path);

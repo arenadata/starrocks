@@ -61,7 +61,9 @@ public:
 
 private:
     struct ResolvedPath {
-        std::shared_ptr<FileSystem> fs;
+        // Must be starrocks::FileSystem: unqualified FileSystem resolves to the
+        // paimon::FileSystem injected-class-name from the base class.
+        std::shared_ptr<::starrocks::FileSystem> fs;
         std::string path;
         std::string cache_key;
     };
@@ -79,7 +81,7 @@ private:
     int _retry_delay_ms = 50;
 
     mutable std::mutex _fs_mutex;
-    mutable std::unordered_map<std::string, std::shared_ptr<FileSystem>> _file_systems;
+    mutable std::unordered_map<std::string, std::shared_ptr<::starrocks::FileSystem>> _file_systems;
 };
 
 } // namespace paimon_cpp
