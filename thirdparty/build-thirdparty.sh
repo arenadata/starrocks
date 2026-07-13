@@ -1122,7 +1122,7 @@ build_paimon_cpp() {
     mkdir -p "${build_dir}"
     cd "${build_dir}"
 
-    local paimon_cxxflags="-O3 -fno-omit-frame-pointer -fPIC -g -include cstdint ${FILE_PREFIX_MAP_OPTION} -Wno-deprecated-declarations"
+    local paimon_cxxflags="-O3 -fno-omit-frame-pointer -fPIC -g -include cstdint ${FILE_PREFIX_MAP_OPTION} -Wno-deprecated-declarations -Wno-error=maybe-uninitialized -Wno-error=array-bounds -Wno-error=stringop-overflow -Wno-error=dangling-pointer"
     local paimon_cflags="-O3 -fno-omit-frame-pointer -fPIC -g ${FILE_PREFIX_MAP_OPTION}"
     if [[ "${KERNEL}" != "Darwin" ]]; then
         paimon_cxxflags="${paimon_cxxflags} -Wno-nontrivial-memcall"
