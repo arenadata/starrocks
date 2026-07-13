@@ -93,3 +93,22 @@ diff --git a/src/paimon/format/parquet/parquet_format_writer.cpp b/src/paimon/fo
  }
  
  ParquetFormatWriter::ParquetFormatWriter(std::unique_ptr<::parquet::arrow::FileWriter> writer,
+diff --git a/src/paimon/format/parquet/parquet_writer_builder.cpp b/src/paimon/format/parquet/parquet_writer_builder.cpp
+--- a/src/paimon/format/parquet/parquet_writer_builder.cpp
++++ b/src/paimon/format/parquet/parquet_writer_builder.cpp
+@@ -75,11 +75,10 @@ Result<std::shared_ptr<::parquet::WriterProperties>> ParquetWriterBuilder::Prepa
+         builder.compression_level(file_compression_level);
+     }
+ 
+-    PAIMON_ASSIGN_OR_RAISE(int64_t row_group_size, OptionsUtils::GetValueFromMap<int64_t>(
+-                                                       options_, PARQUET_BLOCK_SIZE,
+-                                                       ::parquet::DEFAULT_MAX_ROW_GROUP_SIZE));
+-    builder.max_row_group_size(row_group_size);
++    // Stock Apache Arrow WriterProperties has no max_row_group_size() /
++    // DEFAULT_MAX_ROW_GROUP_SIZE (Doris-only). Row-group sizing is controlled by
++    // max_row_group_length() above; PARQUET_BLOCK_SIZE is ignored here.
+ 
+     PAIMON_ASSIGN_OR_RAISE(int64_t page_size,
+                            OptionsUtils::GetValueFromMap<int64_t>(options_, PARQUET_PAGE_SIZE,
+                                                                  ::parquet::kDefaultDataPageSize));
+
