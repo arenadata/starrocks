@@ -66,6 +66,9 @@ done
 
 # ================== conf section =======================
 export STARROCKS_HOME=`cd "$curdir/.."; pwd`
+if [ -e $STARROCKS_HOME/conf/starrocks_env.sh ]; then
+    source $STARROCKS_HOME/conf/starrocks_env.sh
+fi
 source $STARROCKS_HOME/bin/common.sh
 
 export_shared_envvars

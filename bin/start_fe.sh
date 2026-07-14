@@ -58,6 +58,10 @@ done
 
 export STARROCKS_HOME=`cd "$curdir/.."; pwd`
 
+if [ -e $STARROCKS_HOME/conf/starrocks_env.sh ]; then
+    source $STARROCKS_HOME/conf/starrocks_env.sh
+fi
+
 source $STARROCKS_HOME/bin/common.sh
 
 check_and_update_max_processes
@@ -68,7 +72,7 @@ check_and_update_max_processes
 # LOG_DIR
 # PID_DIR
 export LOG_DIR="$STARROCKS_HOME/log"
-export PID_DIR=`cd "$curdir"; pwd`
+export PID_DIR=${PID_DIR:-`cd "$curdir"; pwd`}
 export_env_from_conf $STARROCKS_HOME/conf/fe.conf
 
 if [ -e $STARROCKS_HOME/conf/hadoop_env.sh ]; then

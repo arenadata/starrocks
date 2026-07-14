@@ -84,7 +84,7 @@ export_shared_envvars() {
     # PID_DIR
     export UDF_RUNTIME_DIR=${STARROCKS_HOME}/lib/udf-runtime
     export LOG_DIR=${STARROCKS_HOME}/log
-    export PID_DIR=`cd "$curdir"; pwd`
+    export PID_DIR=${PID_DIR:-`cd "$curdir"; pwd`}
 
     # https://github.com/aws/aws-cli/issues/5623
     # https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-envvars.html

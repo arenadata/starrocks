@@ -56,7 +56,10 @@ while true; do
 done
 
 export STARROCKS_HOME=`cd "$curdir/.."; pwd`
-export PID_DIR=`cd "$curdir"; pwd`
+if [ -e $STARROCKS_HOME/conf/starrocks_env.sh ]; then
+    source $STARROCKS_HOME/conf/starrocks_env.sh
+fi
+export PID_DIR=${PID_DIR:-`cd "$curdir"; pwd`}
 
 source $STARROCKS_HOME/bin/common.sh
 
