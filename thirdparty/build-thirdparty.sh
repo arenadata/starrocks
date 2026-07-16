@@ -1125,9 +1125,16 @@ build_paimon_cpp() {
     # FindAvroAlt expects include/avro/Decoder.hh; StarRocks installs under avrocpp/.
     if [[ -d "${TP_INCLUDE_DIR}/avrocpp" ]]; then
         ln -sfn avrocpp "${TP_INCLUDE_DIR}/avro"
-    elif [[ ! -f "${TP_INCLUDE_DIR}/avro/Decoder.hh" ]]; then
-        echo "paimon_cpp requires Avro C++ headers at ${TP_INCLUDE_DIR}/avro" >&2
+    fi
+    if [[ ! -f "${TP_INCLUDE_DIR}/avro/Decoder.hh" ]]; then
+        echo "paimon_cpp requires Avro C++ headers at ${TP_INCLUDE_DIR}/avro/Decoder.hh" >&2
         return 1
+    fi
+    # Replace broken FindAvroAlt (HINTS mistakenly passed via NAMES). Safe to
+    # re-copy every build; cache.cmake also pre-seeds AVRO_* as a fallback.
+    if [[ -f "${TP_PATCH_DIR}/paimon-cpp-FindAvroAlt.cmake" ]]; then
+        cp -f "${TP_PATCH_DIR}/paimon-cpp-FindAvroAlt.cmake" \
+            "${source_dir}/cmake_modules/FindAvroAlt.cmake"
     fi
 
     rm -rf "${build_dir}"
