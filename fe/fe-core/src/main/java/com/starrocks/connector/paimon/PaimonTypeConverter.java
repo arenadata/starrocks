@@ -98,10 +98,10 @@ public final class PaimonTypeConverter {
                 return DataTypes.TIME();
             case DATETIME:
                 return DataTypes.TIMESTAMP(PAIMON_TIMESTAMP_PRECISION);
+            // paimon-cpp schema parser accepts STRING but not CHAR/VARCHAR(n).
             case CHAR:
-                return DataTypes.CHAR(requirePositiveLength(scalarType, type));
             case VARCHAR:
-                return DataTypes.VARCHAR(requirePositiveLength(scalarType, type));
+                return DataTypes.STRING();
             case VARBINARY:
                 return DataTypes.BYTES();
             case DECIMALV2:
@@ -123,14 +123,6 @@ public final class PaimonTypeConverter {
                     PAIMON_MAX_DECIMAL_PRECISION, type.toSql());
         }
         return DataTypes.DECIMAL(precision, scale);
-    }
-
-    private static int requirePositiveLength(ScalarType scalarType, Type type) {
-        int length = scalarType.getLength();
-        if (length <= 0) {
-            throw new SemanticException("Paimon requires an explicit positive length for type: %s", type.toSql());
-        }
-        return length;
     }
 
     private static SemanticException unsupported(Type type) {

@@ -216,9 +216,12 @@ public class PaimonMetadata implements ConnectorMetadata {
                 }
                 builder.partitionKeys(((ListPartitionDesc) stmt.getPartitionDesc()).getPartitionColNames());
             }
-            if (stmt.getProperties() != null) {
-                builder.options(new HashMap<>(stmt.getProperties()));
-            }
+            // Default data files to parquet (ORC plugin is not linked). Leave manifest.format
+            // unset so Paimon keeps its Avro default.
+            Map<String, String> options = stmt.getProperties() == null ? new HashMap<>()
+                    : new HashMap<>(stmt.getProperties());
+            options.putIfAbsent("file.format", "parquet");
+            builder.options(options);
             if (stmt.getComment() != null) {
                 builder.comment(stmt.getComment());
             }

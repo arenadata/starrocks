@@ -16,10 +16,15 @@
 
 #include <arrow/c/bridge.h>
 #include <arrow/record_batch.h>
+#include <fmt/format.h>
 
 #include <algorithm>
+#include <map>
+#include <string>
 
 #include "column/chunk.h"
+#include "column/column_helper.h"
+#include "column/datum.h"
 #include "exec/pipeline/sink/paimon_table_sink_operator.h"
 #include "exec/paimon/paimon_memory_pool.h"
 #include "exec/paimon/paimon_sink_provider.h"
@@ -39,7 +44,17 @@
 namespace starrocks {
 namespace {
 constexpr size_t kPaimonCommitPayloadBytes = 3 * 1024 * 1024;
+
+std::map<std::string, std::string> with_file_format_default(const std::map<std::string, std::string>& options) {
+    auto out = options;
+    // Data files default to parquet (ORC plugin is not linked). Manifest format stays
+    // whatever the table uses — Paimon default is avro and the Avro plugin is linked.
+    if (out.find("file.format") == out.end()) {
+        out["file.format"] = "parquet";
+    }
+    return out;
 }
+} // namespace
 
 PaimonTableSink::PaimonTableSink(ObjectPool* pool, const std::vector<TExpr>& output_exprs)
         : _pool(pool), _output_exprs(output_exprs) {}
@@ -63,14 +78,56 @@ Status PaimonTableSink::init(const TDataSink& thrift_sink, RuntimeState* state) 
 
 Status PaimonTableSink::prepare(RuntimeState* state) {
     RETURN_IF_ERROR(DataSink::prepare(state));
+    // init() may call prepare/open eagerly; non-pipeline fragments also call prepare again.
+    if (_profile != nullptr) {
+        return Status::OK();
+    }
     std::stringstream title;
     title << "PaimonTableSink (frag_id=" << state->fragment_instance_id() << ")";
     _profile = _pool->add(new RuntimeProfile(title.str()));
+
+    // VALUES/project chunks use producer slot ids; evaluate via output exprs instead of
+    // looking up sink-tuple slot ids on the incoming chunk.
+    RETURN_IF_ERROR(Expr::create_expr_trees(_pool, _output_exprs, &_output_expr_ctxs, state));
+    RETURN_IF_ERROR(Expr::prepare(_output_expr_ctxs, state));
+
+    auto* tuple = state->desc_tbl().get_tuple_descriptor(_sink.tuple_id);
+    if (tuple == nullptr) return Status::InternalError("Paimon sink tuple descriptor is missing");
+    const auto& slots = tuple->slots();
+    if (_output_expr_ctxs.size() != slots.size()) {
+        return Status::InvalidArgument(fmt::format(
+                "Paimon sink output exprs ({}) do not match sink tuple slots ({})", _output_expr_ctxs.size(),
+                slots.size()));
+    }
+
+    std::vector<std::shared_ptr<arrow::Field>> fields;
+    _data_expr_ctxs.clear();
+    _row_kind_expr_idx = -1;
+    for (size_t i = 0; i < slots.size(); ++i) {
+        const auto* slot = slots[i];
+        if (slot->id() == _row_kind_slot_id) {
+            _row_kind_expr_idx = static_cast<int32_t>(i);
+            continue;
+        }
+        std::shared_ptr<arrow::Field> field;
+        const Expr* expr = _output_expr_ctxs[i]->root();
+        RETURN_IF_ERROR(convert_to_arrow_field(expr->type(), slot->col_name(), expr->is_nullable(), &field));
+        fields.emplace_back(std::move(field));
+        _data_expr_ctxs.emplace_back(_output_expr_ctxs[i]);
+    }
+    if (_data_expr_ctxs.empty()) return Status::InvalidArgument("Paimon sink has no table data columns");
+    if (_row_kind_slot_id >= 0 && _row_kind_expr_idx < 0) {
+        return Status::InvalidArgument("Paimon sink row-kind slot was not found among output exprs");
+    }
+    _arrow_schema = arrow::schema(std::move(fields));
     return Status::OK();
 }
 
 Status PaimonTableSink::open(RuntimeState* state) {
     RETURN_IF_ERROR(Expr::open(_output_expr_ctxs, state));
+    if (_native_opened) {
+        return Status::OK();
+    }
     return _open_native_writer(state);
 }
 
@@ -121,24 +178,14 @@ Status PaimonTableSink::_open_native_writer(RuntimeState* state) {
     if (!_sink.partition_column_names.empty()) {
         return Status::NotSupported("Paimon native sink requires partition-aware exchange for partitioned tables");
     }
-    auto* tuple = state->desc_tbl().get_tuple_descriptor(_sink.tuple_id);
-    if (tuple == nullptr) return Status::InternalError("Paimon sink tuple descriptor is missing");
-    std::vector<std::shared_ptr<arrow::Field>> fields;
-    for (const auto* slot : tuple->slots()) {
-        if (slot->id() == _row_kind_slot_id) continue;
-        std::shared_ptr<arrow::Field> field;
-        RETURN_IF_ERROR(convert_to_arrow_field(slot->type(), slot->col_name(), slot->is_nullable(), &field));
-        fields.emplace_back(std::move(field));
-        _data_types.emplace_back(&slot->type());
-        _data_slot_ids.emplace_back(slot->id());
-    }
-    if (_data_slot_ids.empty()) return Status::InvalidArgument("Paimon sink has no table data columns");
-    _arrow_schema = arrow::schema(std::move(fields));
+    if (_arrow_schema == nullptr) return Status::InternalError("Paimon sink arrow schema is not prepared");
+
     _paimon_memory_pool = std::make_shared<PaimonMemoryPool>(state->instance_mem_tracker_ptr());
+    auto table_options = with_file_format_default(_sink.table_options);
     auto filesystem = std::make_shared<paimon_cpp::PaimonStarRocksFileSystem>(
-            _sink.table_options, _sink.__isset.cloud_configuration ? &_sink.cloud_configuration : nullptr, state);
+            table_options, _sink.__isset.cloud_configuration ? &_sink.cloud_configuration : nullptr, state);
     paimon::WriteContextBuilder builder(_sink.table_location, _sink.commit_user);
-    builder.SetOptions(_sink.table_options).WithMemoryPool(_paimon_memory_pool).WithFileSystem(std::move(filesystem));
+    builder.SetOptions(table_options).WithMemoryPool(_paimon_memory_pool).WithFileSystem(std::move(filesystem));
     auto context = builder.Finish();
     if (!context.ok()) return paimon_cpp::from_paimon_status(context.status(), "build Paimon write context");
     auto writer = paimon::FileStoreWrite::Create(std::move(context).value());
@@ -155,16 +202,20 @@ Status PaimonTableSink::_write_native_chunk(Chunk* chunk) {
 #else
     if (_native_writer == nullptr) return Status::InternalError("Paimon FileStoreWrite is not initialized");
     std::shared_ptr<arrow::RecordBatch> arrow_batch;
-    RETURN_IF_ERROR(convert_chunk_to_arrow_batch(chunk, _data_types, _data_slot_ids, _arrow_schema,
-                                                 arrow::default_memory_pool(), &arrow_batch));
+    RETURN_IF_ERROR(convert_chunk_to_arrow_batch(chunk, _data_expr_ctxs, _arrow_schema, arrow::default_memory_pool(),
+                                                 &arrow_batch));
     ArrowArray array{};
     ArrowSchema schema{};
     auto exported = arrow::ExportRecordBatch(*arrow_batch, &array, &schema);
     if (!exported.ok()) return Status::InternalError("Failed to export Arrow C Data batch: " + exported.ToString());
     std::vector<paimon::RecordBatch::RowKind> row_kinds;
     row_kinds.reserve(chunk->num_rows());
-    if (_row_kind_slot_id >= 0) {
-        const ColumnPtr& column = chunk->get_column_by_slot_id(_row_kind_slot_id);
+    if (_row_kind_expr_idx >= 0) {
+        ASSIGN_OR_RETURN(ColumnPtr column, _output_expr_ctxs[_row_kind_expr_idx]->evaluate(chunk));
+        if (column->is_constant()) {
+            const TypeDescriptor& type = _output_expr_ctxs[_row_kind_expr_idx]->root()->type();
+            column = ColumnHelper::copy_and_unfold_const_column(type, column->is_nullable(), column, chunk->num_rows());
+        }
         for (size_t row = 0; row < chunk->num_rows(); ++row) {
             Datum datum = column->get(row);
             if (datum.is_null()) return Status::InvalidArgument("Paimon hidden row-kind cannot be NULL");

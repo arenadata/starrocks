@@ -322,6 +322,8 @@ if (ENABLE_PAIMON_CPP)
                                  libpaimon_blob_file_format.a)
     add_paimon_cpp_static_target(paimon_cpp_parquet_file_format
                                  libpaimon_parquet_file_format.a)
+    add_paimon_cpp_static_target(paimon_cpp_avro_file_format
+                                 libpaimon_avro_file_format.a)
     add_paimon_cpp_static_target(paimon_cpp_file_index
                                  libpaimon_file_index.a)
     add_paimon_cpp_static_target(paimon_cpp_global_index
@@ -334,6 +336,7 @@ if (ENABLE_PAIMON_CPP)
     add_paimon_cpp_static_target(xxhash_paimon libxxhash_paimon.a)
     add_paimon_cpp_static_target(roaring_bitmap_paimon
                                  libroaring_bitmap_paimon.a)
+    add_paimon_cpp_static_target(avrocpp_paimon libavrocpp_paimon.a)
 
     add_paimon_cpp_static_target(paimon_cpp_arrow_dataset libarrow_dataset.a)
     add_paimon_cpp_static_target(paimon_cpp_arrow_acero libarrow_acero.a)
@@ -344,6 +347,7 @@ if (ENABLE_PAIMON_CPP)
         paimon_cpp_local_file_system
         paimon_cpp_blob_file_format
         paimon_cpp_parquet_file_format
+        paimon_cpp_avro_file_format
         paimon_cpp_file_index
         paimon_cpp_global_index)
 endif()
@@ -1060,6 +1064,7 @@ if (ENABLE_PAIMON_CPP)
             tbb_paimon
             xxhash_paimon
             roaring_bitmap_paimon
+            avrocpp_paimon
             glog
             re2
             thrift
@@ -1091,6 +1096,7 @@ if (ENABLE_PAIMON_CPP)
             tbb_paimon
             xxhash_paimon
             roaring_bitmap_paimon
+            avrocpp_paimon
             glog
             re2
             thrift

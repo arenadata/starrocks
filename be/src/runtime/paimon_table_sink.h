@@ -16,6 +16,7 @@
 
 #include <atomic>
 #include <memory>
+#include <vector>
 
 #include "exec/data_sink.h"
 #include "gen_cpp/DataSinks_types.h"
@@ -31,7 +32,6 @@ class MemoryPool;
 namespace starrocks {
 
 class ExprContext;
-class TypeDescriptor;
 
 // Paimon commit messages are not file descriptors: a writer must prepare a
 // versioned CommitMessage and report it to RuntimeState.  Keep the sink
@@ -61,13 +61,14 @@ private:
     ObjectPool* _pool;
     const std::vector<TExpr>& _output_exprs;
     std::vector<ExprContext*> _output_expr_ctxs;
+    // Output exprs that map to table data columns (excludes hidden row-kind).
+    std::vector<ExprContext*> _data_expr_ctxs;
     RuntimeProfile* _profile = nullptr;
     TPaimonTableSink _sink;
     TPaimonWriteMode::type _write_mode = TPaimonWriteMode::APPEND;
     int32_t _row_kind_slot_id = -1;
+    int32_t _row_kind_expr_idx = -1;
     std::shared_ptr<arrow::Schema> _arrow_schema;
-    std::vector<const TypeDescriptor*> _data_types;
-    std::vector<SlotId> _data_slot_ids;
     std::shared_ptr<paimon::MemoryPool> _paimon_memory_pool;
     std::unique_ptr<paimon::FileStoreWrite> _native_writer;
     std::atomic<int64_t> _commit_sequence{0};

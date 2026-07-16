@@ -1186,6 +1186,11 @@ build_paimon_cpp() {
         "${build_dir}/release/libxxhash.a"
     install_private_archive libroaring_bitmap_paimon.a \
         "${build_dir}/release/libroaring_bitmap.a"
+    # Pinned Avro C++ used by paimon-cpp's Avro manifest/data plugin. Keep it
+    # distinct from StarRocks's own libavrocpp_s.a (different include layout/version).
+    install_private_archive libavrocpp_paimon.a \
+        "${build_dir}/avro_ep-install/lib/libavrocpp_s.a" \
+        "${build_dir}/avro_ep-install/lib64/libavrocpp_s.a"
 
     local expected_archive
     for expected_archive in \
@@ -1193,12 +1198,14 @@ build_paimon_cpp() {
         libpaimon_local_file_system.a \
         libpaimon_blob_file_format.a \
         libpaimon_parquet_file_format.a \
+        libpaimon_avro_file_format.a \
         libpaimon_file_index.a \
         libpaimon_global_index.a \
         libfmt_paimon.a \
         libtbb_paimon.a \
         libxxhash_paimon.a \
-        libroaring_bitmap_paimon.a; do
+        libroaring_bitmap_paimon.a \
+        libavrocpp_paimon.a; do
         if [[ ! -f "${TP_INSTALL_DIR}/lib64/${expected_archive}" ]]; then
             echo "paimon-cpp install is missing ${expected_archive}" >&2
             return 1

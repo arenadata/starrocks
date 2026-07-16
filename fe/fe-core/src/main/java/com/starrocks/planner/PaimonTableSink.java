@@ -32,6 +32,7 @@ import com.starrocks.thrift.TPaimonTableSink;
 import com.starrocks.thrift.TPaimonWriteMode;
 import com.starrocks.thrift.TPaimonWriterType;
 
+import java.util.HashMap;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -143,7 +144,14 @@ public class PaimonTableSink extends DataSink {
         paimonSink.setTable_name(table.getCatalogTableName());
         paimonSink.setTable_uuid(table.getUUID());
         paimonSink.setTable_location(table.getTableLocation());
-        paimonSink.setTable_options(table.getProperties());
+        // Ensure C++ writer options are present even for tables created before defaults existed.
+        // Do not override manifest.format — Paimon defaults to avro and paimon-cpp links Avro.
+        HashMap<String, String> options = new HashMap<>();
+        if (table.getProperties() != null) {
+            options.putAll(table.getProperties());
+        }
+        options.putIfAbsent("file.format", "parquet");
+        paimonSink.setTable_options(options);
         paimonSink.setPartition_column_names(table.getPartitionColumnNames());
         paimonSink.setWriter_type(writerType);
         paimonSink.setWrite_mode(writeMode);
