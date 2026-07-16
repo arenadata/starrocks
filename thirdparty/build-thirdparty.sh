@@ -1117,6 +1117,18 @@ build_paimon_cpp() {
     arrow_acero_lib="$(find_static_archive arrow_acero)"
     arrow_bundled_lib="$(find_static_archive arrow_bundled_dependencies)"
     parquet_lib="$(find_static_archive parquet)"
+    # Avro plugin reuses StarRocks avro-cpp (must be built before paimon_cpp).
+    if [[ ! -f "${TP_INSTALL_DIR}/lib64/libavrocpp_s.a" ]]; then
+        echo "paimon_cpp requires libavrocpp_s.a; build avro_cpp first" >&2
+        return 1
+    fi
+    # FindAvroAlt expects include/avro/Decoder.hh; StarRocks installs under avrocpp/.
+    if [[ -d "${TP_INCLUDE_DIR}/avrocpp" ]]; then
+        ln -sfn avrocpp "${TP_INCLUDE_DIR}/avro"
+    elif [[ ! -f "${TP_INCLUDE_DIR}/avro/Decoder.hh" ]]; then
+        echo "paimon_cpp requires Avro C++ headers at ${TP_INCLUDE_DIR}/avro" >&2
+        return 1
+    fi
 
     rm -rf "${build_dir}"
     mkdir -p "${build_dir}"
@@ -1186,11 +1198,8 @@ build_paimon_cpp() {
         "${build_dir}/release/libxxhash.a"
     install_private_archive libroaring_bitmap_paimon.a \
         "${build_dir}/release/libroaring_bitmap.a"
-    # Pinned Avro C++ used by paimon-cpp's Avro manifest/data plugin. Keep it
-    # distinct from StarRocks's own libavrocpp_s.a (different include layout/version).
-    install_private_archive libavrocpp_paimon.a \
-        "${build_dir}/avro_ep-install/lib/libavrocpp_s.a" \
-        "${build_dir}/avro_ep-install/lib64/libavrocpp_s.a"
+    # Drop any previous private Avro copy; the BE links StarRocks libavrocpp_s.a.
+    rm -f "${TP_INSTALL_DIR}/lib64/libavrocpp_paimon.a"
 
     local expected_archive
     for expected_archive in \
@@ -1204,8 +1213,7 @@ build_paimon_cpp() {
         libfmt_paimon.a \
         libtbb_paimon.a \
         libxxhash_paimon.a \
-        libroaring_bitmap_paimon.a \
-        libavrocpp_paimon.a; do
+        libroaring_bitmap_paimon.a; do
         if [[ ! -f "${TP_INSTALL_DIR}/lib64/${expected_archive}" ]]; then
             echo "paimon-cpp install is missing ${expected_archive}" >&2
             return 1
@@ -1510,6 +1518,8 @@ build_avro_cpp() {
     # cp include and lib
     cp libavrocpp_s.a ${TP_INSTALL_DIR}/lib64/
     cp -r ../include/avro ${TP_INSTALL_DIR}/include/avrocpp
+    # paimon-cpp FindAvroAlt looks for include/avro/...; keep both layouts.
+    ln -sfn avrocpp ${TP_INSTALL_DIR}/include/avro
 }
 
 # serders
@@ -1839,7 +1849,6 @@ declare -a all_packages=(
     croaringbitmap
     cctz
     fmt
-    paimon_cpp
     ryu
     hadoop_src
     jdk
@@ -1858,6 +1867,8 @@ declare -a all_packages=(
     jansson
     avro_c
     avro_cpp
+    # After avro_cpp: paimon Avro plugin reuses StarRocks libavrocpp_s.a.
+    paimon_cpp
     serdes
     datasketches
     fiu

@@ -336,7 +336,7 @@ if (ENABLE_PAIMON_CPP)
     add_paimon_cpp_static_target(xxhash_paimon libxxhash_paimon.a)
     add_paimon_cpp_static_target(roaring_bitmap_paimon
                                  libroaring_bitmap_paimon.a)
-    add_paimon_cpp_static_target(avrocpp_paimon libavrocpp_paimon.a)
+    # Avro C++ comes from StarRocks's existing avrocpp target (libavrocpp_s.a).
 
     add_paimon_cpp_static_target(paimon_cpp_arrow_dataset libarrow_dataset.a)
     add_paimon_cpp_static_target(paimon_cpp_arrow_acero libarrow_acero.a)
@@ -1064,7 +1064,7 @@ if (ENABLE_PAIMON_CPP)
             tbb_paimon
             xxhash_paimon
             roaring_bitmap_paimon
-            avrocpp_paimon
+            avrocpp
             glog
             re2
             thrift
@@ -1096,7 +1096,8 @@ if (ENABLE_PAIMON_CPP)
             tbb_paimon
             xxhash_paimon
             roaring_bitmap_paimon
-            avrocpp_paimon
+            # Same StarRocks Avro C++ used elsewhere; required to resolve the Avro plugin.
+            avrocpp
             glog
             re2
             thrift

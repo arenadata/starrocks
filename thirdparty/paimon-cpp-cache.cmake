@@ -35,8 +35,10 @@ set(PAIMON_BUILD_SHARED OFF CACHE BOOL "" FORCE)
 set(PAIMON_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(PAIMON_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 # Required for default Paimon manifest.format=avro (and Avro data files).
+# Reuse StarRocks's libavrocpp_s.a so the BE does not link two Avro C++ copies.
 set(PAIMON_ENABLE_AVRO ON CACHE BOOL "" FORCE)
-set(Avro_SOURCE BUNDLED CACHE STRING "" FORCE)
+set(Avro_SOURCE SYSTEM CACHE STRING "" FORCE)
+set(Avro_ROOT "${_paimon_starrocks_prefix}" CACHE PATH "" FORCE)
 set(PAIMON_ENABLE_ORC OFF CACHE BOOL "" FORCE)
 set(PAIMON_ENABLE_LANCE OFF CACHE BOOL "" FORCE)
 set(PAIMON_ENABLE_JINDO OFF CACHE BOOL "" FORCE)
