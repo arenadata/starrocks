@@ -2792,7 +2792,7 @@ public class StmtExecutor {
         }
 
         if (dmlType == DmlType.INSERT_OVERWRITE && !((InsertStmt) parsedStmt).hasOverwriteJob() &&
-                !(targetTable.isIcebergTable() || targetTable.isHiveTable())) {
+                !(targetTable.isIcebergTable() || targetTable.isHiveTable() || targetTable.isPaimonTable())) {
             handleInsertOverwrite((InsertStmt) parsedStmt);
             return;
         }
@@ -2862,8 +2862,10 @@ public class StmtExecutor {
 
             context.setStatisticsJob(AnalyzerUtils.isStatisticsJob(context, parsedStmt));
             InsertLoadJob loadJob = null;
-            if (!(targetTable.isIcebergTable() || targetTable.isHiveTable() || targetTable.isTableFunctionTable() ||
-                    targetTable.isBlackHoleTable())) {
+            // External lake tables commit via MetadataMgr.finishSink; skip internal InsertLoadJob
+            // registration (it resolves DBs only in the local metastore).
+            if (!(targetTable.isIcebergTable() || targetTable.isHiveTable() || targetTable.isPaimonTable() ||
+                    targetTable.isTableFunctionTable() || targetTable.isBlackHoleTable())) {
                 // insert, update and delete job
                 loadJob = context.getGlobalStateMgr().getLoadMgr().registerInsertLoadJob(
                         label,
