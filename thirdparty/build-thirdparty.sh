@@ -1117,21 +1117,6 @@ build_paimon_cpp() {
     arrow_acero_lib="$(find_static_archive arrow_acero)"
     arrow_bundled_lib="$(find_static_archive arrow_bundled_dependencies)"
     parquet_lib="$(find_static_archive parquet)"
-    # Avro plugin reuses StarRocks avro-cpp (must be built before paimon_cpp).
-    if [[ ! -f "${TP_INSTALL_DIR}/lib64/libavrocpp_s.a" ]]; then
-        echo "paimon_cpp requires libavrocpp_s.a; build avro_cpp first" >&2
-        return 1
-    fi
-    if ! ensure_avro_cpp_headers_for_paimon; then
-        echo "paimon_cpp requires Avro C++ headers; rebuild with: ./build-thirdparty.sh avro_cpp" >&2
-        return 1
-    fi
-    # Replace broken FindAvroAlt (HINTS mistakenly passed via NAMES). Safe to
-    # re-copy every build; cache.cmake also pre-seeds AVRO_* as a fallback.
-    if [[ -f "${TP_PATCH_DIR}/paimon-cpp-FindAvroAlt.cmake" ]]; then
-        cp -f "${TP_PATCH_DIR}/paimon-cpp-FindAvroAlt.cmake" \
-            "${source_dir}/cmake_modules/FindAvroAlt.cmake"
-    fi
 
     rm -rf "${build_dir}"
     mkdir -p "${build_dir}"
@@ -1201,8 +1186,17 @@ build_paimon_cpp() {
         "${build_dir}/release/libxxhash.a"
     install_private_archive libroaring_bitmap_paimon.a \
         "${build_dir}/release/libroaring_bitmap.a"
-    # Drop any previous private Avro copy; the BE links StarRocks libavrocpp_s.a.
-    rm -f "${TP_INSTALL_DIR}/lib64/libavrocpp_paimon.a"
+    # Paimon's pinned Avro C++ (distinct from StarRocks libavrocpp_s.a).
+    install_private_archive libavrocpp_paimon.a \
+        "${build_dir}/avro_ep-install/lib/libavrocpp_s.a" \
+        "${build_dir}/avro_ep-install/lib64/libavrocpp_s.a"
+
+    # Partially link the Avro plugin with its private Avro and localize avro::
+    # symbols so the final BE link can still use StarRocks libavrocpp_s.a.
+    bundle_paimon_avro_private_avrocpp \
+        "${TP_INSTALL_DIR}/lib64/libpaimon_avro_file_format.a" \
+        "${TP_INSTALL_DIR}/lib64/libavrocpp_paimon.a" \
+        "${build_dir}/paimon_avro_bundle_work"
 
     local expected_archive
     for expected_archive in \
@@ -1216,7 +1210,8 @@ build_paimon_cpp() {
         libfmt_paimon.a \
         libtbb_paimon.a \
         libxxhash_paimon.a \
-        libroaring_bitmap_paimon.a; do
+        libroaring_bitmap_paimon.a \
+        libavrocpp_paimon.a; do
         if [[ ! -f "${TP_INSTALL_DIR}/lib64/${expected_archive}" ]]; then
             echo "paimon-cpp install is missing ${expected_archive}" >&2
             return 1
@@ -1232,6 +1227,58 @@ build_paimon_cpp() {
     fi
 
     restore_compile_flags
+}
+
+# Merge libpaimon_avro_file_format.a + libavrocpp_paimon.a into one relocatable
+# object and localize Avro C++ symbols so they do not collide with StarRocks avrocpp.
+bundle_paimon_avro_private_avrocpp() {
+    local plugin_archive="$1"
+    local avro_archive="$2"
+    local work_dir="$3"
+
+    if [[ ! -f "${plugin_archive}" || ! -f "${avro_archive}" ]]; then
+        echo "bundle_paimon_avro_private_avrocpp: missing inputs" >&2
+        return 1
+    fi
+
+    rm -rf "${work_dir}"
+    mkdir -p "${work_dir}"
+
+    local ld_cmd="ld"
+    if command -v ld.lld >/dev/null 2>&1; then
+        ld_cmd="ld.lld"
+    fi
+
+    # Relocatable link keeps plugin <-> private Avro references resolvable after
+    # Avro symbols are localized for the final starrocks_be link.
+    if ! ${ld_cmd} -r -o "${work_dir}/bundle.o" \
+            --whole-archive "${plugin_archive}" "${avro_archive}" --no-whole-archive; then
+        echo "bundle_paimon_avro_private_avrocpp: relocatable link failed" >&2
+        return 1
+    fi
+
+    nm -g --defined-only "${avro_archive}" 2>/dev/null \
+        | awk 'NF >= 3 && $2 ~ /^[ABCDGRSTVWabcdgrstvw]$/ { print $NF }' \
+        | sort -u > "${work_dir}/localize_syms.txt"
+    if [[ ! -s "${work_dir}/localize_syms.txt" ]]; then
+        # Fallback: Itanium mangling for namespace avro::
+        nm -g --defined-only "${work_dir}/bundle.o" 2>/dev/null \
+            | awk 'NF >= 3 && $NF ~ /^_Z(N|NK|TIN|TSN|TVN|GVN).*4avro/ { print $NF }' \
+            | sort -u > "${work_dir}/localize_syms.txt"
+    fi
+    if [[ ! -s "${work_dir}/localize_syms.txt" ]]; then
+        echo "bundle_paimon_avro_private_avrocpp: no Avro symbols to localize" >&2
+        return 1
+    fi
+
+    if ! objcopy --localize-symbols="${work_dir}/localize_syms.txt" "${work_dir}/bundle.o"; then
+        echo "bundle_paimon_avro_private_avrocpp: objcopy localize failed" >&2
+        return 1
+    fi
+
+    rm -f "${plugin_archive}"
+    ar rcs "${plugin_archive}" "${work_dir}/bundle.o"
+    echo "Bundled private Avro into ${plugin_archive} ($(wc -l < "${work_dir}/localize_syms.txt") localized symbols)"
 }
 
 #ryu
@@ -1883,6 +1930,8 @@ declare -a all_packages=(
     croaringbitmap
     cctz
     fmt
+    # Bundled Avro is private to paimon-cpp; no dependency on StarRocks avro_cpp.
+    paimon_cpp
     ryu
     hadoop_src
     jdk
@@ -1901,8 +1950,6 @@ declare -a all_packages=(
     jansson
     avro_c
     avro_cpp
-    # After avro_cpp: paimon Avro plugin reuses StarRocks libavrocpp_s.a.
-    paimon_cpp
     serdes
     datasketches
     fiu

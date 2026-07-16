@@ -1064,7 +1064,6 @@ if (ENABLE_PAIMON_CPP)
             tbb_paimon
             xxhash_paimon
             roaring_bitmap_paimon
-            avrocpp
             glog
             re2
             thrift
@@ -1096,8 +1095,8 @@ if (ENABLE_PAIMON_CPP)
             tbb_paimon
             xxhash_paimon
             roaring_bitmap_paimon
-            # Same StarRocks Avro C++ used elsewhere; required to resolve the Avro plugin.
-            avrocpp
+            # Avro for the Paimon plugin is privately bundled inside
+            # libpaimon_avro_file_format.a (localized). Do not link libavrocpp_paimon.a.
             glog
             re2
             thrift
