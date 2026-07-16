@@ -1548,18 +1548,24 @@ build_jansson() {
 build_avro_c() {
     check_if_source_exist $AVRO_SOURCE
     cd $TP_SOURCE_DIR/$AVRO_SOURCE/lang/c
+    # Drop stale CMakeCache when the same tree is built under different mounts
+    # (/workspace/thirdparty vs /var/local/thirdparty).
+    rm -rf build
     mkdir -p build
     cd build
     $CMAKE_CMD .. -DCMAKE_INSTALL_PREFIX=${TP_INSTALL_DIR} -DCMAKE_INSTALL_LIBDIR=lib64 -DCMAKE_BUILD_TYPE=Release
     ${BUILD_SYSTEM} -j$PARALLEL
     ${BUILD_SYSTEM} install
-    rm ${TP_INSTALL_DIR}/lib64/libavro.so*
+    rm -f ${TP_INSTALL_DIR}/lib64/libavro.so*
 }
 
 # avro-cpp
 build_avro_cpp() {
     check_if_source_exist $AVRO_SOURCE
     cd $TP_SOURCE_DIR/$AVRO_SOURCE/lang/c++
+    # Drop stale CMakeCache when the same tree is built under different mounts
+    # (/workspace/thirdparty vs /var/local/thirdparty).
+    rm -rf build
     mkdir -p build
     cd build
     $CMAKE_CMD .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=${TP_INSTALL_DIR} -DBoost_USE_STATIC_RUNTIME=ON  -DCMAKE_PREFIX_PATH=${TP_INSTALL_DIR} -DSNAPPY_INCLUDE_DIR=${TP_INSTALL_DIR}/include -DSNAPPY_LIBRARIES=${TP_INSTALL_DIR}/lib
