@@ -1122,12 +1122,8 @@ build_paimon_cpp() {
         echo "paimon_cpp requires libavrocpp_s.a; build avro_cpp first" >&2
         return 1
     fi
-    # FindAvroAlt expects include/avro/Decoder.hh; StarRocks installs under avrocpp/.
-    if [[ -d "${TP_INCLUDE_DIR}/avrocpp" ]]; then
-        ln -sfn avrocpp "${TP_INCLUDE_DIR}/avro"
-    fi
-    if [[ ! -f "${TP_INCLUDE_DIR}/avro/Decoder.hh" ]]; then
-        echo "paimon_cpp requires Avro C++ headers at ${TP_INCLUDE_DIR}/avro/Decoder.hh" >&2
+    if ! ensure_avro_cpp_headers_for_paimon; then
+        echo "paimon_cpp requires Avro C++ headers; rebuild with: ./build-thirdparty.sh avro_cpp" >&2
         return 1
     fi
     # Replace broken FindAvroAlt (HINTS mistakenly passed via NAMES). Safe to
@@ -1513,6 +1509,36 @@ build_avro_c() {
     rm ${TP_INSTALL_DIR}/lib64/libavro.so*
 }
 
+# Expose StarRocks Avro C++ headers as include/avro/... for paimon-cpp.
+# Important: if include/avro is a real directory, `ln -sfn avrocpp include/avro`
+# nests the symlink inside it — always remove the path first.
+ensure_avro_cpp_headers_for_paimon() {
+    local include_dir="${TP_INCLUDE_DIR}"
+    local avrocpp_dir="${include_dir}/avrocpp"
+    local avro_link="${include_dir}/avro"
+
+    if [[ -f "${avrocpp_dir}/Decoder.hh" ]]; then
+        rm -rf "${avro_link}"
+        ln -sfn avrocpp "${avro_link}"
+    elif [[ -f "${avrocpp_dir}/avro/Decoder.hh" ]]; then
+        # Nested layout from a previous `cp -r` into an existing avrocpp dir.
+        rm -rf "${avro_link}"
+        ln -sfn avrocpp/avro "${avro_link}"
+    elif [[ -f "${avro_link}/Decoder.hh" ]]; then
+        return 0
+    else
+        echo "Avro C++ headers not found under ${avrocpp_dir} (or ${avro_link})" >&2
+        return 1
+    fi
+
+    if [[ ! -f "${avro_link}/Decoder.hh" ]]; then
+        echo "Failed to expose Avro C++ headers at ${avro_link}/Decoder.hh" >&2
+        ls -la "${include_dir}" >&2 || true
+        ls -la "${avrocpp_dir}" >&2 || true
+        return 1
+    fi
+}
+
 # avro-cpp
 build_avro_cpp() {
     check_if_source_exist $AVRO_SOURCE
@@ -1522,11 +1548,12 @@ build_avro_cpp() {
     $CMAKE_CMD .. -DCMAKE_BUILD_TYPE=Release -DBOOST_ROOT=${TP_INSTALL_DIR} -DBoost_USE_STATIC_RUNTIME=ON  -DCMAKE_PREFIX_PATH=${TP_INSTALL_DIR} -DSNAPPY_INCLUDE_DIR=${TP_INSTALL_DIR}/include -DSNAPPY_LIBRARIES=${TP_INSTALL_DIR}/lib
     LIBRARY_PATH=${TP_INSTALL_DIR}/lib64:$LIBRARY_PATH LD_LIBRARY_PATH=${STARROCKS_GCC_HOME}/lib64:$LD_LIBRARY_PATH ${BUILD_SYSTEM} -j$PARALLEL
 
-    # cp include and lib
+    # cp include and lib (replace any previous nested/broken layout)
     cp libavrocpp_s.a ${TP_INSTALL_DIR}/lib64/
+    rm -rf ${TP_INSTALL_DIR}/include/avrocpp ${TP_INSTALL_DIR}/include/avro
     cp -r ../include/avro ${TP_INSTALL_DIR}/include/avrocpp
     # paimon-cpp FindAvroAlt looks for include/avro/...; keep both layouts.
-    ln -sfn avrocpp ${TP_INSTALL_DIR}/include/avro
+    ensure_avro_cpp_headers_for_paimon
 }
 
 # serders
