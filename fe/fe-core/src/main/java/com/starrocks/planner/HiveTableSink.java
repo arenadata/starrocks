@@ -24,6 +24,7 @@ import com.starrocks.connector.hive.HiveStorageFormat;
 import com.starrocks.connector.hive.HiveWriteUtils;
 import com.starrocks.connector.hive.TextFileFormatDesc;
 import com.starrocks.credential.CloudConfiguration;
+import com.starrocks.credential.HadoopImpersonation;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.thrift.TCloudConfiguration;
@@ -112,6 +113,7 @@ public class HiveTableSink extends DataSink {
         textFileFormatDesc.ifPresent(fileFormatDesc -> tHiveTableSink.setText_file_desc(fileFormatDesc.toThrift()));
         TCloudConfiguration tCloudConfiguration = new TCloudConfiguration();
         cloudConfiguration.toThrift(tCloudConfiguration);
+        HadoopImpersonation.apply(tCloudConfiguration);
         tHiveTableSink.setCloud_configuration(tCloudConfiguration);
         tDataSink.setHive_table_sink(tHiveTableSink);
 

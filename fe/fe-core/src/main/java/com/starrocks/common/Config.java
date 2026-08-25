@@ -3783,6 +3783,21 @@ public class Config extends ConfigBase {
     @ConfField
     public static int kerberos_relogin_check_interval_second = 60;
 
+    /**
+     * Whether to read and write external storage as the user running the query instead of the
+     * Kerberos principal of the cluster. Requires `kerberos_principal` and `kerberos_keytab`, and
+     * the principal must be registered as a Hadoop proxy user (`hadoop.proxyuser.<name>.hosts` and
+     * `.groups`) on every cluster reached this way.
+     * <p>
+     * Covers catalog scans and catalog writes only. These keep using the cluster principal, so
+     * HDFS permissions must not be relaxed on the assumption that they are enforced per user:
+     * Hive Metastore calls and the file listing the FE performs while planning; FILES(), broker-less
+     * LOAD, EXPORT and SELECT INTO OUTFILE; backup and restore; statistics and metadata collection
+     * and anything else running as the built-in root user.
+     */
+    @ConfField(mutable = true)
+    public static boolean enable_hadoop_impersonation = false;
+
     @ConfField(mutable = true)
     public static int catalog_metadata_cache_size = 500;
 

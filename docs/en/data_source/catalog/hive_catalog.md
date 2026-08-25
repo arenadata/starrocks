@@ -100,6 +100,34 @@ The principal must have the permissions to access your HDFS cluster and Hive met
 
 Run the `kinit -kt keytab_path principal` command on each FE and each BE or CN. To run this command, you must have the permissions to access your HDFS cluster and Hive metastore. Note that accessing KDC with this command is time-sensitive. Therefore, you need to use cron to run this command periodically.
 
+### Impersonation
+
+By default every query reads external storage as the cluster principal, so HDFS permissions and HDFS-side Ranger policies see one identity for the whole cluster. Set `enable_hadoop_impersonation = true` in **fe.conf** to have queries read and write as the user who issued them instead.
+
+This requires a keytab login (see [Log in from a keytab](#log-in-from-a-keytab)) and, on every cluster reached this way, the principal registered as a Hadoop proxy user in **core-site.xml**:
+
+```XML
+<property>
+  <name>hadoop.proxyuser.starrocks.hosts</name>
+  <value>fe1.example.com,be1.example.com</value>
+</property>
+<property>
+  <name>hadoop.proxyuser.starrocks.groups</name>
+  <value>analysts</value>
+</property>
+```
+
+Restrict `hosts` and `groups` — a proxy user may act as anyone they allow. StarRocks user names are passed through unchanged, so they must match the names the Hadoop cluster knows, after its `auth_to_local` rules are applied.
+
+#### What impersonation does not cover
+
+Impersonation applies to catalog scans and catalog writes. Everything below keeps using the cluster principal, so **do not relax HDFS permissions or HDFS-side Ranger policies on the assumption that every access is checked per user**:
+
+- Metadata access: Hive Metastore calls, and the file listing the FE performs while planning. A user can therefore see the names and sizes of files they cannot read; the read itself fails on the BE.
+- `FILES()`, broker-less `LOAD`, `EXPORT` and `SELECT ... INTO OUTFILE` against `hdfs://` and `viewfs://` paths. A user who can issue these statements reaches such a path with the permissions of the cluster principal, regardless of their own.
+- Backup and restore.
+- Statistics collection, metadata collection, and any statement running as the built-in `root` user. These identities exist only inside StarRocks and no Hadoop cluster would accept them as a proxy user, so they are excluded deliberately rather than failing at the NameNode.
+
 ## Create a Hive catalog
 
 ### Syntax

@@ -18,6 +18,7 @@ import com.starrocks.catalog.TableFunctionTable;
 import com.starrocks.common.Config;
 import com.starrocks.credential.CloudConfiguration;
 import com.starrocks.credential.CloudConfigurationFactory;
+import com.starrocks.credential.HadoopImpersonation;
 import com.starrocks.thrift.TCloudConfiguration;
 import com.starrocks.thrift.TDataSink;
 import com.starrocks.thrift.TDataSinkType;
@@ -51,6 +52,7 @@ public class TableFunctionTableSink extends DataSink {
         tTableFunctionTableSink.setTarget_table(table.toTTableFunctionTable());
         TCloudConfiguration tCloudConfiguration = new TCloudConfiguration();
         cloudConfiguration.toThrift(tCloudConfiguration);
+        HadoopImpersonation.apply(tCloudConfiguration);
         // Set use azure native sdk
         tCloudConfiguration.setAzure_use_native_sdk(Config.azure_use_native_sdk);
         tTableFunctionTableSink.setCloud_configuration(tCloudConfiguration);
