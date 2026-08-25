@@ -20,6 +20,7 @@
 #include "gutil/strings/substitute.h"
 #include "udf/java/java_udf.h"
 #include "util/hdfs_util.h"
+#include "util/kerberos_login.h"
 
 namespace starrocks {
 
@@ -48,7 +49,15 @@ static Status create_hdfs_fs_handle(const std::string& namenode, const std::shar
     const THdfsProperties* properties = options.hdfs_properties();
     if (properties != nullptr) {
         if (properties->__isset.hdfs_username) {
-            hdfsBuilderSetUserName(hdfs_builder, properties->hdfs_username.data());
+            // A user name makes libhdfs build a credential-less remote user instead of using the
+            // keytab login, which a Kerberized NameNode rejects. Impersonating that user needs a
+            // proxy user, which is not supported yet.
+            if (is_kerberos_login_configured()) {
+                LOG(WARNING) << "ignoring hdfs username '" << properties->hdfs_username
+                             << "', connecting as the kerberos principal instead";
+            } else {
+                hdfsBuilderSetUserName(hdfs_builder, properties->hdfs_username.data());
+            }
         }
     }
     hdfsBuilderSetForceNewInstance(hdfs_builder);

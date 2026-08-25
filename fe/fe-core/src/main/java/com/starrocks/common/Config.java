@@ -3761,6 +3761,28 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true)
     public static boolean ranger_user_ugi = false;
 
+    /**
+     * Kerberos principal FE logs in as at startup, e.g. starrocks/_HOST@EXAMPLE.COM.
+     * `_HOST` is replaced with the canonical hostname of the local node.
+     * Must be set together with `kerberos_keytab`. When both are empty, FE performs no
+     * Kerberos login and relies on an externally maintained ticket cache (kinit), as before.
+     */
+    @ConfField
+    public static String kerberos_principal = "";
+
+    /**
+     * Absolute path of the keytab holding the credentials of `kerberos_principal`.
+     */
+    @ConfField
+    public static String kerberos_keytab = "";
+
+    /**
+     * Interval between TGT expiration checks of the keytab login. Hadoop performs the actual
+     * relogin only when the ticket is close to expiry.
+     */
+    @ConfField
+    public static int kerberos_relogin_check_interval_second = 60;
+
     @ConfField(mutable = true)
     public static int catalog_metadata_cache_size = 500;
 
