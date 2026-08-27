@@ -23,7 +23,6 @@ STARROCKS_ROOT=${STARROCKS_ROOT:-"/opt/starrocks"}
 STARROCKS_HOME=${STARROCKS_ROOT}/fe
 FE_CONFFILE=$STARROCKS_HOME/conf/fe.conf
 META_DIR=$STARROCKS_HOME/meta
-EXIT_IN_PROGRESS=false
 
 log_stderr()
 {
@@ -241,7 +240,8 @@ start_fe_no_meta()
         opts+=" --logconsole"
     fi
     log_stderr "first start with no meta run start_fe.sh with additional options: '$opts'"
-    $STARROCKS_HOME/bin/start_fe.sh $opts
+    # replace the shell with the FE process, so that it receives the container stop signal directly
+    exec $STARROCKS_HOME/bin/start_fe.sh $opts
 }
 
 start_fe_with_meta()
@@ -255,7 +255,8 @@ start_fe_with_meta()
         opts+=" --logconsole"
     fi
     log_stderr "start with meta run start_fe.sh with additional options: '$opts'"
-    $STARROCKS_HOME/bin/start_fe.sh $opts
+    # replace the shell with the FE process, so that it receives the container stop signal directly
+    exec $STARROCKS_HOME/bin/start_fe.sh $opts
 }
 
 svc_name=$1
