@@ -19,7 +19,7 @@ In addition to the native RBAC privilege system, StarRocks v3.1.9 also supports 
 
 - Creates access policies, masking policies, and row-level filter policies through Apache Ranger.
 - Ranger audit logs.
-- **Ranger Servers that use Kerberos for authentication are not supported.**
+- Ranger Servers that use Kerberos for authentication, provided the FE logs in from a keytab. See [Connecting to a Kerberized Ranger Admin](#connecting-to-a-kerberized-ranger-admin).
 - You can register multiple StarRocks Services in the same Apache Ranger service to manage privileges in different StarRocks clusters.
 
 This topic describes the permission control methods and integration process of StarRocks and Apache Ranger. For information on how to create security policies on Ranger to manage data security, see the [Apache Ranger official website](https://ranger.apache.org/).
@@ -192,6 +192,26 @@ This step configures the StarRocks Service on Ranger so that users can perform a
    bin/stop_fe.sh
    bin/start_fe.sh
    ```
+
+### Connecting to a Kerberized Ranger Admin
+
+A Ranger Admin that requires Kerberos rejects policy downloads with `Unauthenticated access not allowed`, and the FE log shows `secureMode=false` for the policy refresher. The FE switches to SPNEGO once it holds Kerberos credentials of its own, which it obtains by logging in from a keytab:
+
+1. Set `kerberos_principal` and `kerberos_keytab` in **fe.conf** on every FE machine, and point the JVM at your **krb5.conf**:
+
+   ```Properties
+   kerberos_principal = starrocks/_HOST@EXAMPLE.COM
+   kerberos_keytab = /etc/security/keytabs/starrocks.keytab
+   JAVA_OPTS="-Djava.security.krb5.conf=/etc/krb5.conf"
+   ```
+
+   `_HOST` is replaced with the canonical hostname of the local node. The keytab must be readable by the user running the FE and by nobody else (`chmod 400`). An FE that cannot log in refuses to start.
+
+2. Add the short name of the principal, `starrocks` in this example, to `policy.download.auth.users` of the StarRocks Service on Ranger Admin. Without it, Ranger authenticates the FE and then denies the download.
+
+3. Restart all FE machines and check **fe.log** for `Kerberos login succeeded`, followed by a policy refresher that reports `secureMode=true`.
+
+The same settings let the FE reach a Kerberized HDFS cluster or Hive metastore, see [Hive catalog](../../../data_source/catalog/hive_catalog.md).
 
 ## Reuse other services to control access to external tables
 

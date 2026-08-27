@@ -41,6 +41,7 @@ import com.starrocks.common.Config;
 import com.starrocks.common.Log4jConfig;
 import com.starrocks.common.ThreadPoolManager;
 import com.starrocks.common.Version;
+import com.starrocks.common.security.KerberosLoginManager;
 import com.starrocks.failpoint.FailPoint;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.ha.StateChangeExecutor;
@@ -130,6 +131,10 @@ public class StarRocksFE {
 
             // set dns cache ttl
             java.security.Security.setProperty("networkaddress.cache.ttl", String.valueOf(Config.dns_cache_ttl_seconds));
+
+            // must happen before anything builds a UserGroupInformation, in particular before
+            // the Ranger plugin starts refreshing policies
+            KerberosLoginManager.loginIfConfigured();
 
             RestoreClusterSnapshotMgr.init(starRocksDir + "/conf/cluster_snapshot.yaml", cmdLineOpts.isStartFromSnapshot());
 

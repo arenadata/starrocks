@@ -43,6 +43,7 @@
 #include "service/staros_worker.h"
 #include "storage/lake/tablet_manager.h"
 #include "storage/storage_engine.h"
+#include "util/kerberos_login.h"
 #include "util/logging.h"
 #include "util/mem_info.h"
 #include "util/thrift_rpc_helper.h"
@@ -87,6 +88,12 @@ void start_be(const std::vector<StorePath>& paths, bool as_cn) {
     auto daemon = std::make_unique<Daemon>();
     daemon->init(as_cn, paths);
     LOG(INFO) << process_name << " start step " << start_step++ << ": daemon threads start successfully";
+
+    // must happen before anything builds a UserGroupInformation in the embedded JVM
+    EXIT_IF_ERROR(login_kerberos_if_configured());
+    if (is_kerberos_login_configured()) {
+        LOG(INFO) << process_name << " start step " << start_step++ << ": kerberos login successfully";
+    }
 
     // init jdbc driver manager
     EXIT_IF_ERROR(JDBCDriverManager::getInstance()->init(std::string(getenv("STARROCKS_HOME")) + "/lib/jdbc_drivers"));

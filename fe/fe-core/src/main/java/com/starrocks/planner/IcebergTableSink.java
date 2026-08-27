@@ -22,6 +22,7 @@ import com.starrocks.connector.iceberg.IcebergUtil;
 import com.starrocks.credential.CloudConfiguration;
 import com.starrocks.credential.CloudConfigurationFactory;
 import com.starrocks.credential.CloudType;
+import com.starrocks.credential.HadoopImpersonation;
 import com.starrocks.qe.SessionVariable;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.thrift.TCloudConfiguration;
@@ -118,6 +119,7 @@ public class IcebergTableSink extends DataSink {
         tIcebergTableSink.setTarget_max_file_size(targetMaxFileSize);
         TCloudConfiguration tCloudConfiguration = new TCloudConfiguration();
         cloudConfiguration.toThrift(tCloudConfiguration);
+        HadoopImpersonation.apply(tCloudConfiguration);
         tIcebergTableSink.setCloud_configuration(tCloudConfiguration);
 
         tDataSink.setIceberg_table_sink(tIcebergTableSink);

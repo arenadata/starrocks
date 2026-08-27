@@ -27,6 +27,7 @@ import com.starrocks.connector.CatalogConnector;
 import com.starrocks.connector.RemoteFilesSampleStrategy;
 import com.starrocks.connector.hive.HiveConnectorScanRangeSource;
 import com.starrocks.credential.CloudConfiguration;
+import com.starrocks.credential.HadoopImpersonation;
 import com.starrocks.datacache.DataCacheOptions;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.sql.optimizer.ScanOptimizeOption;
@@ -221,6 +222,7 @@ public class HdfsScanNode extends ScanNode {
         if (cc != null) {
             TCloudConfiguration tCloudConfiguration = new TCloudConfiguration();
             cc.toThrift(tCloudConfiguration);
+            HadoopImpersonation.apply(tCloudConfiguration);
             tHdfsScanNode.setCloud_configuration(tCloudConfiguration);
         }
     }

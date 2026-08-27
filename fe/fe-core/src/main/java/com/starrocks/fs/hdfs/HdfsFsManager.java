@@ -24,6 +24,7 @@ import com.starrocks.common.Config;
 import com.starrocks.common.NotImplementedException;
 import com.starrocks.common.StarRocksException;
 import com.starrocks.common.ThreadPoolManager;
+import com.starrocks.common.security.KerberosLoginManager;
 import com.starrocks.connector.share.credential.CloudConfigurationConstants;
 import com.starrocks.credential.CloudConfiguration;
 import com.starrocks.credential.CloudConfigurationFactory;
@@ -591,7 +592,13 @@ public class HdfsFsManager {
                 conf.set(FS_HDFS_IMPL_DISABLE_CACHE, disableCache);
                 UserGroupInformation ugi = null;
                 if (!Strings.isNullOrEmpty(username) && conf.get("hadoop.security.authentication").equals("simple")) {
-                    ugi = UserGroupInformation.createRemoteUser(username);
+                    // A remote user carries no credentials, which a Kerberized NameNode rejects.
+                    // Impersonating that user needs a proxy user, which is not supported yet.
+                    if (KerberosLoginManager.isLoggedIn()) {
+                        LOG.warn("ignoring hdfs username '{}', connecting as the kerberos principal instead", username);
+                    } else {
+                        ugi = UserGroupInformation.createRemoteUser(username);
+                    }
                 }
                 FileSystem dfsFileSystem = null;
                 if (ugi != null) {

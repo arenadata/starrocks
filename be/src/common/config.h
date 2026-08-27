@@ -1087,6 +1087,17 @@ CONF_Int32(hdfs_client_hedged_read_threshold_millis, "2500");
 CONF_Int32(hdfs_client_max_cache_size, "64");
 CONF_Int32(hdfs_client_io_read_retry, "0");
 
+// Kerberos principal this node logs in as at startup, e.g. starrocks/_HOST@EXAMPLE.COM.
+// `_HOST` is replaced with the canonical hostname of the local node.
+// Must be set together with `kerberos_keytab`. When both are empty, no Kerberos login is
+// performed and an externally maintained ticket cache (kinit) is used, as before.
+CONF_String(kerberos_principal, "");
+// Absolute path of the keytab holding the credentials of `kerberos_principal`.
+CONF_String(kerberos_keytab, "");
+// Interval between TGT expiration checks of the keytab login. Hadoop performs the actual
+// relogin only when the ticket is close to expiry.
+CONF_Int32(kerberos_relogin_check_interval_second, "60");
+
 // Enable output trace logs in aws-sdk-cpp for diagnosis purpose.
 // Once logging is enabled in your application, the SDK will generate log files in your current working directory
 // following the default naming pattern of aws_sdk_<date>.log.

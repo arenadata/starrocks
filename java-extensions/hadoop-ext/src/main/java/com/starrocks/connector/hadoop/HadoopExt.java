@@ -20,6 +20,7 @@ import org.apache.hadoop.security.UserGroupInformation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.security.PrivilegedAction;
 
 public class HadoopExt {
@@ -32,6 +33,7 @@ public class HadoopExt {
     public static final String HADOOP_RUNTIME_JARS = "hadoop.runtime.jars";
     public static final String HADOOP_CLOUD_CONFIGURATION_STRING = "hadoop.cloud.configuration.string";
     public static final String HADOOP_USERNAME = "hadoop.username";
+    public static final String HADOOP_IMPERSONATION_ENABLED = "hadoop.impersonation.enabled";
 
     public static HadoopExt getInstance() {
         return INSTANCE;
@@ -52,8 +54,34 @@ public class HadoopExt {
         return null;
     }
 
+    /**
+     * The user the file system should act as. Non-null only when the query carries an impersonated
+     * user and this process holds Kerberos credentials to proxy from, which requires the login
+     * principal to be a Hadoop proxy user of the target cluster.
+     */
     public UserGroupInformation getHDFSUGI(Configuration conf) {
-        return null;
+        if (!conf.getBoolean(HADOOP_IMPERSONATION_ENABLED, false)) {
+            return null;
+        }
+        String user = conf.get(HADOOP_USERNAME, "");
+        if (user.isEmpty()) {
+            return null;
+        }
+
+        UserGroupInformation loginUser;
+        try {
+            loginUser = UserGroupInformation.getLoginUser();
+        } catch (IOException e) {
+            throw new RuntimeException("cannot impersonate " + user + ", no login user available", e);
+        }
+        if (!loginUser.hasKerberosCredentials()) {
+            // Nothing to proxy from. Hadoop applies the user name on its own under simple authentication.
+            return null;
+        }
+        if (user.equals(loginUser.getShortUserName())) {
+            return null;
+        }
+        return UserGroupInformation.createProxyUser(user, loginUser);
     }
 
     public <R, E extends Exception> R doAs(UserGroupInformation ugi, GenericExceptionAction<R, E> action) throws E {

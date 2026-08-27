@@ -20,8 +20,12 @@
 #include "gutil/strings/substitute.h"
 #include "udf/java/java_udf.h"
 #include "util/hdfs_util.h"
+#include "util/kerberos_login.h"
 
 namespace starrocks {
+
+// Mirrors HadoopExt.HADOOP_IMPERSONATION_ENABLED on the java side.
+static const char* const kImpersonationEnabledKey = "hadoop.impersonation.enabled";
 
 // Try to get cloud properties from FSOptions, if cloud configuration not existed, return nullptr.
 // TODO(SmithCruise): Should remove when using cpp sdk
@@ -45,13 +49,6 @@ static Status create_hdfs_fs_handle(const std::string& namenode, const std::shar
     RETURN_IF_ERROR(detect_java_runtime());
     auto hdfs_builder = hdfsNewBuilder();
     hdfsBuilderSetNameNode(hdfs_builder, namenode.c_str());
-    const THdfsProperties* properties = options.hdfs_properties();
-    if (properties != nullptr) {
-        if (properties->__isset.hdfs_username) {
-            hdfsBuilderSetUserName(hdfs_builder, properties->hdfs_username.data());
-        }
-    }
-    hdfsBuilderSetForceNewInstance(hdfs_builder);
 
     // Insert cloud properties(key-value paired) into Hadoop configuration
     // TODO(SmithCruise): Should remove when using cpp sdk
@@ -61,6 +58,22 @@ static Status create_hdfs_fs_handle(const std::string& namenode, const std::shar
             hdfsBuilderConfSetStr(hdfs_builder, cloud_property.first.data(), cloud_property.second.data());
         }
     }
+
+    const THdfsProperties* properties = options.hdfs_properties();
+    if (properties != nullptr && properties->__isset.hdfs_username) {
+        auto impersonation = cloud_properties.find(kImpersonationEnabledKey);
+        if (!is_kerberos_login_configured()) {
+            hdfsBuilderSetUserName(hdfs_builder, properties->hdfs_username.data());
+        } else if (impersonation == cloud_properties.end() || impersonation->second != "true") {
+            // A user name makes libhdfs build a credential-less remote user instead of using the
+            // keytab login, which a Kerberized NameNode rejects. With impersonation the user
+            // travels in the Hadoop configuration instead and becomes a proxy user of the login
+            // principal.
+            LOG(WARNING) << "ignoring hdfs username '" << properties->hdfs_username
+                         << "', connecting as the kerberos principal instead";
+        }
+    }
+    hdfsBuilderSetForceNewInstance(hdfs_builder);
 
     // Set for hdfs client hedged read
     std::string hedged_read_threadpool_size = std::to_string(config::hdfs_client_hedged_read_threadpool_size);

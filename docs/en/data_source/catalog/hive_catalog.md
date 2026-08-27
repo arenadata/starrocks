@@ -80,8 +80,53 @@ If an error indicating an unknown host is returned when you send a query, you mu
 
 If Kerberos authentication is enabled for your HDFS cluster or Hive metastore, configure your StarRocks cluster as follows:
 
-- Run the `kinit -kt keytab_path principal` command on each FE and each BE or CN to obtain Ticket Granting Ticket (TGT) from Key Distribution Center (KDC). To run this command, you must have the permissions to access your HDFS cluster and Hive metastore. Note that accessing KDC with this command is time-sensitive. Therefore, you need to use cron to run this command periodically.
 - Add `JAVA_OPTS="-Djava.security.krb5.conf=/etc/krb5.conf"` to the **$FE_HOME/conf/fe.conf** file of each FE and to the **$BE_HOME/conf/be.conf** file of each BE or the **$CN_HOME/conf/cn.conf** file of each CN. In this example, `/etc/krb5.conf` is the save path of the **krb5.conf** file. You can modify the path based on your needs.
+- Obtain a Ticket Granting Ticket (TGT) from the Key Distribution Center (KDC) on each FE and each BE or CN, in one of the following ways.
+
+#### Log in from a keytab
+
+Set `kerberos_principal` and `kerberos_keytab` in **fe.conf** and in **be.conf** or **cn.conf**:
+
+```Properties
+kerberos_principal = starrocks/_HOST@EXAMPLE.COM
+kerberos_keytab = /etc/security/keytabs/starrocks.keytab
+```
+
+`_HOST` is replaced with the canonical hostname of the local node, so the same setting works on every node. Each node logs in at startup and renews its ticket on its own, and refuses to start if the login fails. The keytab must be readable by the user running the process and by nobody else (`chmod 400`).
+
+The principal must have the permissions to access your HDFS cluster and Hive metastore. Note that with this setting, StarRocks accesses external storage as that principal and ignores the `hadoop.username` property of a catalog.
+
+#### Use an external ticket cache
+
+Run the `kinit -kt keytab_path principal` command on each FE and each BE or CN. To run this command, you must have the permissions to access your HDFS cluster and Hive metastore. Note that accessing KDC with this command is time-sensitive. Therefore, you need to use cron to run this command periodically.
+
+### Impersonation
+
+By default every query reads external storage as the cluster principal, so HDFS permissions and HDFS-side Ranger policies see one identity for the whole cluster. Set `enable_hadoop_impersonation = true` in **fe.conf** to have queries read and write as the user who issued them instead.
+
+This requires a keytab login (see [Log in from a keytab](#log-in-from-a-keytab)) and, on every cluster reached this way, the principal registered as a Hadoop proxy user in **core-site.xml**:
+
+```XML
+<property>
+  <name>hadoop.proxyuser.starrocks.hosts</name>
+  <value>fe1.example.com,be1.example.com</value>
+</property>
+<property>
+  <name>hadoop.proxyuser.starrocks.groups</name>
+  <value>analysts</value>
+</property>
+```
+
+Restrict `hosts` and `groups` — a proxy user may act as anyone they allow. StarRocks user names are passed through unchanged, so they must match the names the Hadoop cluster knows, after its `auth_to_local` rules are applied.
+
+#### What impersonation does not cover
+
+Impersonation applies to catalog scans and catalog writes. Everything below keeps using the cluster principal, so **do not relax HDFS permissions or HDFS-side Ranger policies on the assumption that every access is checked per user**:
+
+- Metadata access: Hive Metastore calls, and the file listing the FE performs while planning. A user can therefore see the names and sizes of files they cannot read; the read itself fails on the BE.
+- `FILES()`, broker-less `LOAD`, `EXPORT` and `SELECT ... INTO OUTFILE` against `hdfs://` and `viewfs://` paths. A user who can issue these statements reaches such a path with the permissions of the cluster principal, regardless of their own.
+- Backup and restore.
+- Statistics collection, metadata collection, and any statement running as the built-in `root` user. These identities exist only inside StarRocks and no Hadoop cluster would accept them as a proxy user, so they are excluded deliberately rather than failing at the NameNode.
 
 ## Create a Hive catalog
 

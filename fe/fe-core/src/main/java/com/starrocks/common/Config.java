@@ -3761,6 +3761,43 @@ public class Config extends ConfigBase {
     @ConfField(mutable = true)
     public static boolean ranger_user_ugi = false;
 
+    /**
+     * Kerberos principal FE logs in as at startup, e.g. starrocks/_HOST@EXAMPLE.COM.
+     * `_HOST` is replaced with the canonical hostname of the local node.
+     * Must be set together with `kerberos_keytab`. When both are empty, FE performs no
+     * Kerberos login and relies on an externally maintained ticket cache (kinit), as before.
+     */
+    @ConfField
+    public static String kerberos_principal = "";
+
+    /**
+     * Absolute path of the keytab holding the credentials of `kerberos_principal`.
+     */
+    @ConfField
+    public static String kerberos_keytab = "";
+
+    /**
+     * Interval between TGT expiration checks of the keytab login. Hadoop performs the actual
+     * relogin only when the ticket is close to expiry.
+     */
+    @ConfField
+    public static int kerberos_relogin_check_interval_second = 60;
+
+    /**
+     * Whether to read and write external storage as the user running the query instead of the
+     * Kerberos principal of the cluster. Requires `kerberos_principal` and `kerberos_keytab`, and
+     * the principal must be registered as a Hadoop proxy user (`hadoop.proxyuser.<name>.hosts` and
+     * `.groups`) on every cluster reached this way.
+     * <p>
+     * Covers catalog scans and catalog writes only. These keep using the cluster principal, so
+     * HDFS permissions must not be relaxed on the assumption that they are enforced per user:
+     * Hive Metastore calls and the file listing the FE performs while planning; FILES(), broker-less
+     * LOAD, EXPORT and SELECT INTO OUTFILE; backup and restore; statistics and metadata collection
+     * and anything else running as the built-in root user.
+     */
+    @ConfField(mutable = true)
+    public static boolean enable_hadoop_impersonation = false;
+
     @ConfField(mutable = true)
     public static int catalog_metadata_cache_size = 500;
 

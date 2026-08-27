@@ -118,6 +118,7 @@ set(UTIL_FILES
   lake_service_recoverable_stub.cpp
   byte_buffer.cpp
   jvm_metrics.cpp
+  kerberos_login.cpp
 )
 
 add_library(Util STATIC
