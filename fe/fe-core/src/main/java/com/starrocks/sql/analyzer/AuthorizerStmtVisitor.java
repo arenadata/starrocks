@@ -144,6 +144,7 @@ import com.starrocks.sql.ast.InstallPluginStmt;
 import com.starrocks.sql.ast.KillAnalyzeStmt;
 import com.starrocks.sql.ast.KillStmt;
 import com.starrocks.sql.ast.LoadStmt;
+import com.starrocks.sql.ast.MergeStmt;
 import com.starrocks.sql.ast.PauseRoutineLoadStmt;
 import com.starrocks.sql.ast.QueryStatement;
 import com.starrocks.sql.ast.RecoverDbStmt;
@@ -344,6 +345,23 @@ public class AuthorizerStmtVisitor implements AstVisitor<Void, ConnectContext> {
             AccessDeniedException.reportAccessDenied(statement.getTableName().getCatalog(),
                     context.getCurrentUserIdentity(), context.getCurrentRoleIds(),
                     PrivilegeType.UPDATE.name(), ObjectType.TABLE.name(), statement.getTableName().getTbl());
+        }
+        checkSelectTableAction(context, statement.getQueryStatement(), Lists.newArrayList(statement.getTableName()));
+        return null;
+    }
+
+    @Override
+    public Void visitMergeStatement(MergeStmt statement, ConnectContext context) {
+        for (MergeStmt.WhenClause clause : statement.getWhenClauses()) {
+            PrivilegeType privilege = clause.getAction() == MergeStmt.Action.INSERT ? PrivilegeType.INSERT
+                    : clause.getAction() == MergeStmt.Action.UPDATE ? PrivilegeType.UPDATE : PrivilegeType.DELETE;
+            try {
+                Authorizer.checkTableAction(context, statement.getTableName(), privilege);
+            } catch (AccessDeniedException e) {
+                AccessDeniedException.reportAccessDenied(statement.getTableName().getCatalog(),
+                        context.getCurrentUserIdentity(), context.getCurrentRoleIds(), privilege.name(),
+                        ObjectType.TABLE.name(), statement.getTableName().getTbl());
+            }
         }
         checkSelectTableAction(context, statement.getQueryStatement(), Lists.newArrayList(statement.getTableName()));
         return null;

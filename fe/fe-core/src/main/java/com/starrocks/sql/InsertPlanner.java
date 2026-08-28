@@ -38,6 +38,7 @@ import com.starrocks.catalog.MaterializedIndexMeta;
 import com.starrocks.catalog.MaterializedView;
 import com.starrocks.catalog.MysqlTable;
 import com.starrocks.catalog.OlapTable;
+import com.starrocks.catalog.PaimonTable;
 import com.starrocks.catalog.Table;
 import com.starrocks.catalog.TableFunctionTable;
 import com.starrocks.catalog.Type;
@@ -57,6 +58,7 @@ import com.starrocks.planner.HiveTableSink;
 import com.starrocks.planner.IcebergTableSink;
 import com.starrocks.planner.MysqlTableSink;
 import com.starrocks.planner.OlapTableSink;
+import com.starrocks.planner.PaimonTableSink;
 import com.starrocks.planner.PlanFragment;
 import com.starrocks.planner.TableFunctionTableSink;
 import com.starrocks.qe.ConnectContext;
@@ -474,6 +476,11 @@ public class InsertPlanner {
             } else if (targetTable instanceof HiveTable) {
                 dataSink = new HiveTableSink((HiveTable) targetTable, tupleDesc,
                         isKeyPartitionStaticInsert(insertStmt, queryRelation), session.getSessionVariable());
+            } else if (targetTable instanceof PaimonTable) {
+                descriptorTable.addReferencedTable(targetTable);
+                dataSink = new PaimonTableSink((PaimonTable) targetTable, tupleDesc,
+                        session.getSessionVariable().getPaimonSinkWriter(), insertStmt.isOverwrite(),
+                        session.getQualifiedUser(), session.getQueryId());
             } else if (targetTable instanceof TableFunctionTable) {
                 dataSink = new TableFunctionTableSink((TableFunctionTable) targetTable);
             } else if (targetTable.isBlackHoleTable()) {
@@ -484,7 +491,8 @@ public class InsertPlanner {
 
             // enable spill for connector sink
             if (session.getSessionVariable().isEnableConnectorSinkSpill() && (targetTable instanceof IcebergTable
-                    || targetTable instanceof HiveTable || targetTable instanceof TableFunctionTable)) {
+                    || targetTable instanceof HiveTable || targetTable instanceof PaimonTable ||
+                    targetTable instanceof TableFunctionTable)) {
                 session.getSessionVariable().setEnableSpill(true);
                 if (currentVariable.getConnectorSinkSpillMemLimitThreshold() < currentVariable.getSpillMemLimitThreshold()) {
                     currentVariable.setSpillMemLimitThreshold(currentVariable.getConnectorSinkSpillMemLimitThreshold());
@@ -493,7 +501,7 @@ public class InsertPlanner {
 
             PlanFragment sinkFragment = execPlan.getFragments().get(0);
             if (canUsePipeline && (targetTable instanceof OlapTable || targetTable.isIcebergTable() ||
-                    targetTable.isHiveTable() || targetTable.isTableFunctionTable())) {
+                    targetTable.isHiveTable() || targetTable.isPaimonTable() || targetTable.isTableFunctionTable())) {
                 if (shuffleServiceEnable) {
                     // For shuffle insert into, we only support tablet sink dop = 1
                     // because for tablet sink dop > 1, local passthourgh exchange will influence the order of sending,
@@ -983,6 +991,18 @@ public class InsertPlanner {
             return PhysicalPropertySet.EMPTY;
         }
 
+        if (targetTable instanceof PaimonTable) {
+            PaimonTable table = (PaimonTable) targetTable;
+            if (session.isEnableConnectorSinkGlobalShuffle() && !table.getPartitionColumns().isEmpty()) {
+                List<Integer> partitionColumnIds = table.getPartitionColumns().stream()
+                        .map(table.getFullSchema()::indexOf)
+                        .map(index -> outputColumns.get(index).getId())
+                        .collect(Collectors.toList());
+                return new PhysicalPropertySet(createDistributionPropertyFromPartitions(partitionColumnIds));
+            }
+            return PhysicalPropertySet.EMPTY;
+        }
+
         if (!(targetTable instanceof OlapTable)) {
             return new PhysicalPropertySet();
         }
@@ -1070,6 +1090,8 @@ public class InsertPlanner {
                 return ((IcebergTable) targetTable).partitionColumnIndexes().contains(columnIdx);
             } else if (targetTable.isHiveTable()) {
                 return columnIdx >= targetTable.getFullSchema().size() - targetTable.getPartitionColumnNames().size();
+            } else if (targetTable.isPaimonTable()) {
+                return targetTable.getPartitionColumnNames().contains(targetTable.getFullSchema().get(columnIdx).getName());
             }
         }
 
@@ -1095,7 +1117,7 @@ public class InsertPlanner {
     private boolean isKeyPartitionStaticInsert(InsertStmt insertStmt, QueryRelation queryRelation) {
         Table targetTable = insertStmt.getTargetTable();
 
-        if (!(targetTable.isHiveTable() || targetTable.isIcebergTable())) {
+        if (!(targetTable.isHiveTable() || targetTable.isIcebergTable() || targetTable.isPaimonTable())) {
             return false;
         }
 

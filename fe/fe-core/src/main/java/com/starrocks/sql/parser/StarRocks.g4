@@ -101,6 +101,7 @@ statement
     | insertStatement
     | updateStatement
     | deleteStatement
+    | mergeStatement
 
     // Routine Statement
     | createRoutineLoadStatement
@@ -1306,6 +1307,16 @@ updateStatement
 
 deleteStatement
     : explainDesc? withClause? DELETE FROM qualifiedName partitionNames? (USING using=relations)? (WHERE where=expression)?
+    ;
+
+mergeStatement
+    : MERGE INTO target=qualifiedName USING source=relation ON on=expression mergeWhenClause+
+    ;
+
+mergeWhenClause
+    : WHEN MATCHED (AND condition=expression)? THEN UPDATE SET assignmentList
+    | WHEN MATCHED (AND condition=expression)? THEN DELETE
+    | WHEN NOT MATCHED (AND condition=expression)? THEN INSERT columnAliases? VALUES expressionsWithDefault
     ;
 
 // ------------------------------------------- Routine Statement -----------------------------------------------------------

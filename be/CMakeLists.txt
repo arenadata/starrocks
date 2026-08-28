@@ -85,6 +85,12 @@ option(WITH_COMPRESS "Build binary with compresss debug section" ON)
 option(WITH_STARCACHE "Build binary with starcache library" ON)
 option(WITH_BRCP_KEEPALIVE "Build binary with brpc_socket_keepalive (requires brpc 1.8)" OFF)
 
+option(ENABLE_PAIMON_CPP "Link the static paimon-cpp integration libraries" OFF)
+if (ENABLE_PAIMON_CPP)
+    add_definitions(-DENABLE_PAIMON_CPP)
+endif()
+message(STATUS "ENABLE_PAIMON_CPP is: ${ENABLE_PAIMON_CPP}")
+
 option(WITH_BENCH "Build binary with bench" OFF)
 
 option(USE_STAROS "Use StarOS to manager tablet info" OFF)
@@ -293,6 +299,58 @@ set_target_properties(arrow PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64
 
 add_library(parquet STATIC IMPORTED)
 set_target_properties(parquet PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libparquet.a)
+
+if (ENABLE_PAIMON_CPP)
+    function(add_paimon_cpp_static_target target_name archive_name)
+        set(archive_path "${THIRDPARTY_DIR}/lib64/${archive_name}")
+        if (NOT EXISTS "${archive_path}")
+            message(FATAL_ERROR
+                    "ENABLE_PAIMON_CPP requires ${archive_path}; "
+                    "build thirdparty package paimon_cpp first")
+        endif()
+        add_library(${target_name} STATIC IMPORTED GLOBAL)
+        set_target_properties(${target_name} PROPERTIES
+                              IMPORTED_LOCATION "${archive_path}")
+    endfunction()
+
+    add_paimon_cpp_static_target(paimon_cpp libpaimon.a)
+    set_target_properties(paimon_cpp PROPERTIES
+                          INTERFACE_INCLUDE_DIRECTORIES "${THIRDPARTY_DIR}/include")
+    add_paimon_cpp_static_target(paimon_cpp_local_file_system
+                                 libpaimon_local_file_system.a)
+    add_paimon_cpp_static_target(paimon_cpp_blob_file_format
+                                 libpaimon_blob_file_format.a)
+    add_paimon_cpp_static_target(paimon_cpp_parquet_file_format
+                                 libpaimon_parquet_file_format.a)
+    add_paimon_cpp_static_target(paimon_cpp_avro_file_format
+                                 libpaimon_avro_file_format.a)
+    add_paimon_cpp_static_target(paimon_cpp_file_index
+                                 libpaimon_file_index.a)
+    add_paimon_cpp_static_target(paimon_cpp_global_index
+                                 libpaimon_global_index.a)
+
+    # These are Paimon's pinned private copies. Keep their target and archive
+    # names distinct from StarRocks's own dependency versions.
+    add_paimon_cpp_static_target(fmt_paimon libfmt_paimon.a)
+    add_paimon_cpp_static_target(tbb_paimon libtbb_paimon.a)
+    add_paimon_cpp_static_target(xxhash_paimon libxxhash_paimon.a)
+    add_paimon_cpp_static_target(roaring_bitmap_paimon
+                                 libroaring_bitmap_paimon.a)
+    # Avro C++ comes from StarRocks's existing avrocpp target (libavrocpp_s.a).
+
+    add_paimon_cpp_static_target(paimon_cpp_arrow_dataset libarrow_dataset.a)
+    add_paimon_cpp_static_target(paimon_cpp_arrow_acero libarrow_acero.a)
+    add_paimon_cpp_static_target(paimon_cpp_arrow_bundled_dependencies
+                                 libarrow_bundled_dependencies.a)
+
+    set(PAIMON_CPP_PLUGIN_TARGETS
+        paimon_cpp_local_file_system
+        paimon_cpp_blob_file_format
+        paimon_cpp_parquet_file_format
+        paimon_cpp_avro_file_format
+        paimon_cpp_file_index
+        paimon_cpp_global_index)
+endif()
 
 add_library(brpc STATIC IMPORTED GLOBAL)
 set_target_properties(brpc PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib64/libbrpc.a)
@@ -985,6 +1043,77 @@ set(STARROCKS_DEPENDENCIES
     icudata
     ${WL_END_GROUP}
 )
+
+if (ENABLE_PAIMON_CPP)
+    if (APPLE)
+        set(PAIMON_CPP_PLUGIN_LINK_OPTIONS)
+        foreach(plugin_target IN LISTS PAIMON_CPP_PLUGIN_TARGETS)
+            list(APPEND PAIMON_CPP_PLUGIN_LINK_OPTIONS
+                 "-Wl,-force_load,$<TARGET_FILE:${plugin_target}>")
+        endforeach()
+        set(STARROCKS_DEPENDENCIES
+            ${STARROCKS_DEPENDENCIES}
+            ${PAIMON_CPP_PLUGIN_LINK_OPTIONS}
+            paimon_cpp
+            parquet
+            paimon_cpp_arrow_dataset
+            paimon_cpp_arrow_acero
+            arrow
+            paimon_cpp_arrow_bundled_dependencies
+            fmt_paimon
+            tbb_paimon
+            xxhash_paimon
+            roaring_bitmap_paimon
+            glog
+            re2
+            thrift
+            protobuf
+            snappy
+            lz4
+            libz
+            zstd
+            brotlidec
+            brotlienc
+            brotlicommon
+            libbz2
+            openssl
+            crypto)
+    else()
+        set(STARROCKS_DEPENDENCIES
+            ${STARROCKS_DEPENDENCIES}
+            ${WL_START_GROUP}
+            -Wl,--whole-archive
+            ${PAIMON_CPP_PLUGIN_TARGETS}
+            -Wl,--no-whole-archive
+            paimon_cpp
+            parquet
+            paimon_cpp_arrow_dataset
+            paimon_cpp_arrow_acero
+            arrow
+            paimon_cpp_arrow_bundled_dependencies
+            fmt_paimon
+            tbb_paimon
+            xxhash_paimon
+            roaring_bitmap_paimon
+            # Avro for the Paimon plugin is privately bundled inside
+            # libpaimon_avro_file_format.a (localized). Do not link libavrocpp_paimon.a.
+            glog
+            re2
+            thrift
+            protobuf
+            snappy
+            lz4
+            libz
+            zstd
+            brotlidec
+            brotlienc
+            brotlicommon
+            libbz2
+            openssl
+            crypto
+            ${WL_END_GROUP})
+    endif()
+endif()
 
 if (NOT BUILD_FORMAT_LIB)
     set(STARROCKS_DEPENDENCIES

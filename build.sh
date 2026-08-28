@@ -43,6 +43,10 @@ if [ -z $BUILD_TYPE ]; then
     export BUILD_TYPE=Release
 fi
 
+# The C++ Paimon reader is opt-in because it adds static third-party archives
+# to the BE. Keep the default disabled for normal builds.
+export ENABLE_PAIMON_CPP="${ENABLE_PAIMON_CPP:-OFF}"
+
 cd $STARROCKS_HOME
 if [ -z $STARROCKS_VERSION ]; then
     export STARROCKS_VERSION="4.0.10.1-4.4.0-0"
@@ -335,6 +339,7 @@ echo "Get params:
     PARALLEL                    -- $PARALLEL
     ENABLE_QUERY_DEBUG_TRACE    -- $ENABLE_QUERY_DEBUG_TRACE
     ENABLE_FAULT_INJECTION      -- $ENABLE_FAULT_INJECTION
+    ENABLE_PAIMON_CPP           -- $ENABLE_PAIMON_CPP
     BUILD_JAVA_EXT              -- $BUILD_JAVA_EXT
     OUTPUT_COMPILE_TIME         -- $OUTPUT_COMPILE_TIME
     WITH_TENANN                 -- $WITH_TENANN
@@ -461,6 +466,7 @@ if [ ${BUILD_BE} -eq 1 ] || [ ${BUILD_FORMAT_LIB} -eq 1 ] ; then
                   -DWITH_STARCACHE=${WITH_STARCACHE}                    \
                   -DUSE_STAROS=${USE_STAROS}                            \
                   -DENABLE_FAULT_INJECTION=${ENABLE_FAULT_INJECTION}    \
+                  -DENABLE_PAIMON_CPP=${ENABLE_PAIMON_CPP}              \
                   -DBUILD_BE=${BUILD_BE}                                \
                   -DWITH_TENANN=${WITH_TENANN}                          \
                   -DSTARROCKS_JIT_ENABLE=${ENABLE_JIT}                  \

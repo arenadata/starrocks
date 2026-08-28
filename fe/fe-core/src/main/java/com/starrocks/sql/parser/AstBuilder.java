@@ -316,6 +316,7 @@ import com.starrocks.sql.ast.ListPartitionDesc;
 import com.starrocks.sql.ast.LoadStmt;
 import com.starrocks.sql.ast.ManualRefreshSchemeDesc;
 import com.starrocks.sql.ast.MapExpr;
+import com.starrocks.sql.ast.MergeStmt;
 import com.starrocks.sql.ast.ModifyBackendClause;
 import com.starrocks.sql.ast.ModifyBrokerClause;
 import com.starrocks.sql.ast.ModifyColumnClause;
@@ -2479,6 +2480,29 @@ public class AstBuilder extends StarRocksBaseVisitor<ParseNode> {
         }
         ret.setHintNodes(hintMap.get(context));
         return ret;
+    }
+
+    @Override
+    public ParseNode visitMergeStatement(StarRocksParser.MergeStatementContext context) {
+        QualifiedName qualifiedName = getQualifiedName(context.target);
+        TableName target = qualifiedNameToTableName(qualifiedName);
+        Relation source = (Relation) visit(context.source);
+        Expr onPredicate = (Expr) visit(context.on);
+        List<MergeStmt.WhenClause> clauses = new ArrayList<>();
+        for (StarRocksParser.MergeWhenClauseContext clause : context.mergeWhenClause()) {
+            Expr condition = clause.condition == null ? null : (Expr) visit(clause.condition);
+            if (clause.UPDATE() != null) {
+                clauses.add(new MergeStmt.WhenClause(true, condition, MergeStmt.Action.UPDATE,
+                        visit(clause.assignmentList().assignment(), ColumnAssignment.class), null, null));
+            } else if (clause.DELETE() != null) {
+                clauses.add(new MergeStmt.WhenClause(true, condition, MergeStmt.Action.DELETE, null, null, null));
+            } else {
+                List<String> columns = clause.columnAliases() == null ? null : getColumnNames(clause.columnAliases());
+                List<Expr> values = ((ValueList) visit(clause.expressionsWithDefault())).getRow();
+                clauses.add(new MergeStmt.WhenClause(false, condition, MergeStmt.Action.INSERT, null, columns, values));
+            }
+        }
+        return new MergeStmt(target, source, onPredicate, clauses, createPos(context));
     }
 
     // ------------------------------------------- Routine Statement ---------------------------------------------------

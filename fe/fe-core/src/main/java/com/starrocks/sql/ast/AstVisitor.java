@@ -369,6 +369,10 @@ public interface AstVisitor<R, C> {
         return visitStatement(statement, context);
     }
 
+    default R visitMergeStatement(MergeStmt statement, C context) {
+        return visitStatement(statement, context);
+    }
+
     // ------------------------------------------- Routine Statement ---------------------------------------------------
 
     default R visitCreateRoutineLoadStatement(CreateRoutineLoadStmt statement, C context) {

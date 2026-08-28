@@ -595,10 +595,22 @@ struct THiveFileInfo {
     5: optional i64 file_size_in_bytes
 }
 
+// Versioned opaque commit payload emitted by a Paimon writer. The writer and
+// sequence fields make commit messages independently identifiable and ordered.
+struct TPaimonCommitInfo {
+    1: optional i32 serializer_version = 1
+    2: optional binary payload
+    3: optional string writer_id
+    4: optional i64 sequence
+    5: optional string checksum
+    6: optional i32 chunk_index
+    7: optional i32 chunk_count
+}
+
 struct TSinkCommitInfo {
     1: optional TIcebergDataFile iceberg_data_file
     2: optional THiveFileInfo hive_file_info
-    // ... for other tables sink commit info
+    3: optional TPaimonCommitInfo paimon_commit_info
 
     100: optional bool is_overwrite;
     101: optional string staging_dir

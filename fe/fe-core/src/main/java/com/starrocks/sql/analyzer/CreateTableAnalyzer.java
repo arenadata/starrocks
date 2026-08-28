@@ -46,6 +46,7 @@ import com.starrocks.common.FeConstants;
 import com.starrocks.common.util.PropertyAnalyzer;
 import com.starrocks.connector.ConnectorType;
 import com.starrocks.connector.elasticsearch.EsUtil;
+import com.starrocks.connector.paimon.PaimonTypeConverter;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.CatalogMgr;
 import com.starrocks.server.GlobalStateMgr;
@@ -107,6 +108,9 @@ public class CreateTableAnalyzer {
         analyzeEngineName(statement, catalogName);
         analyzeCharsetName(statement);
 
+        if (isPaimonEngine(statement)) {
+            validatePaimonCreateShape(statement);
+        }
         analyzeMultiExprsPartition(statement, tableNameObject);
         preCheckColumnRef(statement);
         analyzeKeysDesc(statement);
@@ -115,6 +119,9 @@ public class CreateTableAnalyzer {
         analyzeDistributionDesc(statement);
         analyzeColumnRef(statement, catalogName);
 
+        if (isPaimonEngine(statement)) {
+            validatePaimonColumns(statement);
+        }
         if (statement.isHasGeneratedColumn()) {
             analyzeGeneratedColumn(statement, context);
         }
@@ -277,6 +284,12 @@ public class CreateTableAnalyzer {
 
     private static void analyzeKeysDesc(CreateTableStmt stmt) {
         KeysDesc keysDesc = stmt.getKeysDesc();
+        if (isPaimonEngine(stmt)) {
+            if (keysDesc != null) {
+                throw new SemanticException("Create paimon table should not contain keys desc", keysDesc.getPos());
+            }
+            return;
+        }
         if (!stmt.isOlapEngine()) {
             // mysql, broker, iceberg, hudi and hive do not need key desc
             if (keysDesc != null) {
@@ -586,9 +599,14 @@ public class CreateTableAnalyzer {
         } else {
             if (engineName.equalsIgnoreCase(Table.TableType.ELASTICSEARCH.name())) {
                 EsUtil.analyzePartitionDesc(partitionDesc);
-            } else if (engineName.equalsIgnoreCase(Table.TableType.ICEBERG.name()) 
-                    || engineName.equalsIgnoreCase(Table.TableType.HIVE.name())) {
+            } else if (engineName.equalsIgnoreCase(Table.TableType.ICEBERG.name())
+                    || engineName.equalsIgnoreCase(Table.TableType.HIVE.name())
+                    || isPaimonEngine(stmt)) {
                 if (partitionDesc != null) {
+                    if (isPaimonEngine(stmt) && !(partitionDesc instanceof ListPartitionDesc)) {
+                        throw new SemanticException("Paimon only supports list partition columns",
+                                partitionDesc.getPos());
+                    }
                     ((ListPartitionDesc) partitionDesc).analyzeExternalPartitionColumns(stmt.getColumnDefs(), engineName);
                 }
             } else {
@@ -647,7 +665,8 @@ public class CreateTableAnalyzer {
             if (stmt.getEngineName().equalsIgnoreCase(Table.TableType.ELASTICSEARCH.name())) {
                 EsUtil.analyzeDistributionDesc(distributionDesc);
             } else if (stmt.getEngineName().equalsIgnoreCase(Table.TableType.ICEBERG.name())
-                    || stmt.getEngineName().equalsIgnoreCase(Table.TableType.HIVE.name())) {
+                    || stmt.getEngineName().equalsIgnoreCase(Table.TableType.HIVE.name())
+                    || isPaimonEngine(stmt)) {
                 // no special analyze
             } else {
                 if (distributionDesc != null) {
@@ -796,6 +815,44 @@ public class CreateTableAnalyzer {
             throw new SemanticException("Generated Column only support olap/iceberg table");
         }
         return;
+    }
+
+    private static boolean isPaimonEngine(CreateTableStmt stmt) {
+        return stmt.getEngineName().equalsIgnoreCase(Table.TableType.PAIMON.name());
+    }
+
+    private static void validatePaimonCreateShape(CreateTableStmt stmt) {
+        if (stmt instanceof CreateTemporaryTableStmt) {
+            throw new SemanticException("temporary table only support olap engine");
+        }
+        if (stmt.getKeysDesc() != null) {
+            throw new SemanticException("Create paimon table should not contain keys desc", stmt.getKeysDesc().getPos());
+        }
+        if (stmt.getPartitionDesc() instanceof ListPartitionDesc) {
+            ListPartitionDesc partitionDesc = (ListPartitionDesc) stmt.getPartitionDesc();
+            if (partitionDesc.getPartitionExprs() != null && !partitionDesc.getPartitionExprs().isEmpty()) {
+                throw new SemanticException("Paimon does not support expression partition columns",
+                        partitionDesc.getPos());
+            }
+        }
+    }
+
+    private static void validatePaimonColumns(CreateTableStmt stmt) {
+        for (ColumnDef columnDef : stmt.getColumnDefs()) {
+            if (columnDef.isGeneratedColumn()) {
+                throw new SemanticException("Paimon does not support generated columns", columnDef.getPos());
+            }
+            if (columnDef.isAutoIncrement()) {
+                throw new SemanticException("Paimon does not support AUTO_INCREMENT columns", columnDef.getPos());
+            }
+            if (columnDef.getAggregateType() != null && columnDef.getAggregateType() != AggregateType.NONE) {
+                throw new SemanticException("Paimon does not support aggregate columns", columnDef.getPos());
+            }
+            if (columnDef.getDefaultValueDef().isSet) {
+                throw new SemanticException("Paimon DDL does not support column default values", columnDef.getPos());
+            }
+            PaimonTypeConverter.toPaimonType(columnDef.getType());
+        }
     }
 
     public static void analyzeIndexDefs(CreateTableStmt statement) {

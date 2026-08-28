@@ -79,6 +79,7 @@
 #include "runtime/memory_scratch_sink.h"
 #include "runtime/multi_cast_data_stream_sink.h"
 #include "runtime/mysql_table_sink.h"
+#include "runtime/paimon_table_sink.h"
 #include "runtime/result_sink.h"
 #include "runtime/runtime_state.h"
 #include "runtime/schema_table_sink.h"
@@ -208,6 +209,13 @@ Status DataSink::create_data_sink(RuntimeState* state, const TDataSink& thrift_s
             return Status::InternalError("Missing hive table sink");
         }
         *sink = std::make_unique<HiveTableSink>(state->obj_pool(), output_exprs);
+        break;
+    }
+    case TDataSinkType::PAIMON_TABLE_SINK: {
+        if (!thrift_sink.__isset.paimon_table_sink) {
+            return Status::InternalError("Missing Paimon table sink");
+        }
+        *sink = std::make_unique<PaimonTableSink>(state->obj_pool(), output_exprs);
         break;
     }
     case TDataSinkType::TABLE_FUNCTION_TABLE_SINK: {
@@ -483,6 +491,9 @@ Status DataSink::decompose_data_sink_to_pipeline(pipeline::PipelineBuilderContex
     } else if (typeid(*this) == typeid(starrocks::HiveTableSink)) {
         auto* hive_table_sink = down_cast<starrocks::HiveTableSink*>(this);
         RETURN_IF_ERROR(hive_table_sink->decompose_to_pipeline(prev_operators, thrift_sink, context));
+    } else if (typeid(*this) == typeid(starrocks::PaimonTableSink)) {
+        auto* paimon_table_sink = down_cast<starrocks::PaimonTableSink*>(this);
+        RETURN_IF_ERROR(paimon_table_sink->decompose_to_pipeline(prev_operators, thrift_sink, context));
     } else if (typeid(*this) == typeid(starrocks::TableFunctionTableSink)) {
         auto* table_function_table_sink = down_cast<starrocks::TableFunctionTableSink*>(this);
         RETURN_IF_ERROR(table_function_table_sink->decompose_to_pipeline(prev_operators, thrift_sink, context));

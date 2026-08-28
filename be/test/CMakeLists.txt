@@ -58,6 +58,8 @@ set(EXEC_FILES
         ./exec/es/es_scan_reader_test.cpp
         ./exec/es/es_scroll_parser_test.cpp
         ./exec/paimon/paimon_delete_file_builder_test.cpp
+        ./exec/paimon/paimon_reader_selector_test.cpp
+        ./exec/paimon/paimon_sink_provider_test.cpp
         ./exec/workgroup/scan_task_queue_test.cpp
         ./exec/workgroup/pipeline_executor_set_test.cpp
         ./exec/workgroup/pipeline_executor_set_manager_test.cpp
@@ -599,6 +601,10 @@ set(EXEC_FILES
         ./storage/lake/table_schema_service_test.cpp
         ./storage/lake/fast_schema_evolution_v2_test.cpp
         )
+
+if (ENABLE_PAIMON_CPP)
+    list(APPEND EXEC_FILES ./exec/paimon/paimon_cpp_adapter_test.cpp)
+endif()
 
 if (${USE_AVX512})
     list(APPEND EXEC_FILES ./simd/delta_decode_test.cpp)

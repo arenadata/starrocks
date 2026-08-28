@@ -21,6 +21,7 @@ import com.starrocks.catalog.Table;
 import com.starrocks.common.AlreadyExistsException;
 import com.starrocks.common.DdlException;
 import com.starrocks.common.MetaNotFoundException;
+import com.starrocks.common.StarRocksException;
 import com.starrocks.common.profile.Tracers;
 import com.starrocks.connector.ConnectorMetadatRequestContext;
 import com.starrocks.connector.ConnectorMetadata;
@@ -36,8 +37,12 @@ import com.starrocks.connector.hive.HiveMetadata;
 import com.starrocks.connector.metadata.MetadataTableType;
 import com.starrocks.credential.CloudConfiguration;
 import com.starrocks.qe.ConnectContext;
+import com.starrocks.qe.ShowResultSet;
+import com.starrocks.sql.ast.AlterTableStmt;
 import com.starrocks.sql.ast.CreateTableStmt;
 import com.starrocks.sql.ast.DropTableStmt;
+import com.starrocks.sql.ast.TableRenameClause;
+import com.starrocks.sql.ast.TruncateTableStmt;
 import com.starrocks.sql.optimizer.OptimizerContext;
 import com.starrocks.sql.optimizer.operator.scalar.ColumnRefOperator;
 import com.starrocks.sql.optimizer.operator.scalar.ScalarOperator;
@@ -256,6 +261,22 @@ public class UnifiedMetadata implements ConnectorMetadata {
     public void dropTable(ConnectContext context, DropTableStmt stmt) throws DdlException {
         ConnectorMetadata metadata = metadataOfTable(stmt.getDbName(), stmt.getTableName());
         metadata.dropTable(context, stmt);
+    }
+
+    @Override
+    public ShowResultSet alterTable(ConnectContext context, AlterTableStmt stmt) throws StarRocksException {
+        return metadataOfTable(stmt.getDbName(), stmt.getTableName()).alterTable(context, stmt);
+    }
+
+    @Override
+    public void renameTable(Database db, Table table, TableRenameClause tableRenameClause) throws DdlException {
+        metadataOfTable(table).renameTable(db, table, tableRenameClause);
+    }
+
+    @Override
+    public void truncateTable(TruncateTableStmt truncateTableStmt, ConnectContext context) throws DdlException {
+        metadataOfTable(truncateTableStmt.getDbName(), truncateTableStmt.getTblName())
+                .truncateTable(truncateTableStmt, context);
     }
 
     @Override

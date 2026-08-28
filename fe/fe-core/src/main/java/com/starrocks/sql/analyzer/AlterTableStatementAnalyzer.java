@@ -23,13 +23,23 @@ import com.starrocks.catalog.Table;
 import com.starrocks.common.ErrorCode;
 import com.starrocks.common.ErrorReport;
 import com.starrocks.common.StarRocksException;
+import com.starrocks.connector.paimon.PaimonTypeConverter;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
+import com.starrocks.sql.ast.AddColumnClause;
+import com.starrocks.sql.ast.AddColumnsClause;
 import com.starrocks.sql.ast.AlterClause;
+import com.starrocks.sql.ast.AlterTableCommentClause;
 import com.starrocks.sql.ast.AlterTableStmt;
+import com.starrocks.sql.ast.ColumnDef;
+import com.starrocks.sql.ast.ColumnRenameClause;
 import com.starrocks.sql.ast.CreateIndexClause;
+import com.starrocks.sql.ast.DropColumnClause;
 import com.starrocks.sql.ast.DropIndexClause;
+import com.starrocks.sql.ast.ModifyColumnClause;
+import com.starrocks.sql.ast.ModifyColumnCommentClause;
 import com.starrocks.sql.ast.ModifyTablePropertiesClause;
+import com.starrocks.sql.ast.TableRenameClause;
 import com.starrocks.sql.common.MetaUtils;
 
 import java.util.List;
@@ -78,8 +88,15 @@ public class AlterTableStatementAnalyzer {
                 }
             }
         }
+        if (table.isPaimonTable() && alterClauseList.stream().anyMatch(TableRenameClause.class::isInstance)
+                && alterClauseList.size() != 1) {
+            throw new SemanticException("Paimon table rename cannot be combined with other ALTER TABLE operations");
+        }
         AlterTableClauseAnalyzer alterTableClauseAnalyzerVisitor = new AlterTableClauseAnalyzer(table);
         for (AlterClause alterClause : alterClauseList) {
+            if (table.isPaimonTable()) {
+                validatePaimonAlterClause(table, alterClause);
+            }
             alterTableClauseAnalyzerVisitor.analyze(context, alterClause);
         }
     }
@@ -106,5 +123,56 @@ public class AlterTableStatementAnalyzer {
             return true;
         }
         return false;
+    }
+
+    private static void validatePaimonAlterClause(Table table, AlterClause clause) {
+        if (clause instanceof AddColumnClause) {
+            validatePaimonColumnDefinition(((AddColumnClause) clause).getColumnDef());
+            return;
+        }
+        if (clause instanceof AddColumnsClause) {
+            for (ColumnDef columnDef : ((AddColumnsClause) clause).getColumnDefs()) {
+                validatePaimonColumnDefinition(columnDef);
+            }
+            return;
+        }
+        if (clause instanceof ModifyColumnClause) {
+            validatePaimonColumnDefinition(((ModifyColumnClause) clause).getColumnDef());
+            return;
+        }
+        if (clause instanceof DropColumnClause) {
+            checkPaimonPartitionColumn(table, ((DropColumnClause) clause).getColName());
+            return;
+        }
+        if (clause instanceof ColumnRenameClause) {
+            checkPaimonPartitionColumn(table, ((ColumnRenameClause) clause).getColName());
+            return;
+        }
+        if (clause instanceof ModifyColumnCommentClause
+                || clause instanceof ModifyTablePropertiesClause
+                || clause instanceof AlterTableCommentClause
+                || clause instanceof TableRenameClause) {
+            return;
+        }
+        throw new SemanticException("Paimon does not support ALTER TABLE operation: %s", clause.getOpType());
+    }
+
+    private static void validatePaimonColumnDefinition(ColumnDef columnDef) {
+        if (columnDef.isGeneratedColumn()) {
+            throw new SemanticException("Paimon does not support generated columns", columnDef.getPos());
+        }
+        if (columnDef.isAutoIncrement()) {
+            throw new SemanticException("Paimon does not support AUTO_INCREMENT columns", columnDef.getPos());
+        }
+        if (columnDef.getDefaultValueDef().isSet) {
+            throw new SemanticException("Paimon DDL does not support column default values", columnDef.getPos());
+        }
+        PaimonTypeConverter.toPaimonType(columnDef.getType());
+    }
+
+    private static void checkPaimonPartitionColumn(Table table, String columnName) {
+        if (table.getPartitionColumnNames().stream().anyMatch(name -> name.equalsIgnoreCase(columnName))) {
+            throw new SemanticException("Paimon partition column cannot be altered: %s", columnName);
+        }
     }
 }

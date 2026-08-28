@@ -25,6 +25,10 @@
 #include "exec/hdfs_scanner_partition.h"
 #include "exec/hdfs_scanner_text.h"
 #include "exec/jni_scanner.h"
+#include "exec/paimon/paimon_reader_selector.h"
+#ifdef ENABLE_PAIMON_CPP
+#include "exec/paimon/paimon_cpp_scanner.h"
+#endif
 #include "exprs/expr.h"
 #include "storage/chunk_helper.h"
 
@@ -671,6 +675,14 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     SCOPED_TIMER(_profile.open_file_timer);
 
     const auto& scan_range = _scan_range;
+#ifdef ENABLE_PAIMON_CPP
+    constexpr bool paimon_cpp_compiled = true;
+#else
+    constexpr bool paimon_cpp_compiled = false;
+#endif
+    ASSIGN_OR_RETURN(const PaimonReaderImplementation paimon_reader,
+                     select_paimon_reader(scan_range, paimon_cpp_compiled));
+
     std::string native_file_path = scan_range.full_path;
     if (_hive_table != nullptr && _hive_table->has_partition() && !_hive_table->has_base_path()) {
         auto* partition_desc = _hive_table->get_partition(scan_range.partition_id);
@@ -693,13 +705,18 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     auto fsOptions =
             FSOptions(hdfs_scan_node.__isset.cloud_configuration ? &hdfs_scan_node.cloud_configuration : nullptr);
 
-    ASSIGN_OR_RETURN(auto fs, FileSystem::CreateUniqueFromString(native_file_path, fsOptions));
+    std::unique_ptr<FileSystem> fs;
+    if (paimon_reader != PaimonReaderImplementation::CPP) {
+        ASSIGN_OR_RETURN(fs, FileSystem::CreateUniqueFromString(native_file_path, fsOptions));
+    }
 
     HdfsScannerParams scanner_params;
     RETURN_IF_ERROR(_init_global_dicts(&scanner_params));
     scanner_params.runtime_filter_collector = _runtime_filters;
     scanner_params.scan_range = &scan_range;
-    scanner_params.fs = _pool.add(fs.release());
+    scanner_params.fs = fs != nullptr ? _pool.add(fs.release()) : nullptr;
+    scanner_params.cloud_configuration =
+            hdfs_scan_node.__isset.cloud_configuration ? &hdfs_scan_node.cloud_configuration : nullptr;
     scanner_params.path = native_file_path;
     scanner_params.file_size = _scan_range.file_length;
     scanner_params.table_location = _hive_table->get_base_path();
@@ -772,10 +789,7 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
     if (scan_range.__isset.use_hudi_jni_reader) {
         use_hudi_jni_reader = scan_range.use_hudi_jni_reader;
     }
-    bool use_paimon_jni_reader = false;
-    if (scan_range.__isset.use_paimon_jni_reader) {
-        use_paimon_jni_reader = scan_range.use_paimon_jni_reader;
-    }
+    const bool use_paimon_jni_reader = paimon_reader == PaimonReaderImplementation::JNI;
     bool use_odps_jni_reader = false;
     if (scan_range.__isset.use_odps_jni_reader) {
         use_odps_jni_reader = scan_range.use_odps_jni_reader;
@@ -799,6 +813,13 @@ Status HiveDataSource::_init_scanner(RuntimeState* state) {
         scanner = new CacheSelectScanner();
     } else if (_use_partition_column_value_only) {
         scanner = new HdfsPartitionScanner();
+    } else if (paimon_reader == PaimonReaderImplementation::CPP) {
+#ifdef ENABLE_PAIMON_CPP
+        scanner = new PaimonCppScanner();
+#else
+        return Status::NotSupported(
+                "Paimon C++ reader was requested, but this backend was built without ENABLE_PAIMON_CPP");
+#endif
     } else if (use_paimon_jni_reader) {
         scanner = create_paimon_jni_scanner(jni_scanner_create_options).release();
     } else if (use_hudi_jni_reader) {

@@ -722,7 +722,7 @@ public class AlterTableClauseAnalyzer implements AstVisitor<Void, ConnectContext
             throw new SemanticException(PARSER_ERROR_MSG.invalidColumnDef(e.getMessage()), columnDef.getPos());
         }
 
-        if (columnDef.getType().isTime()) {
+        if (columnDef.getType().isTime() && !table.isPaimonTable()) {
             throw new SemanticException("Unsupported data type: TIME");
         }
 
@@ -987,7 +987,7 @@ public class AlterTableClauseAnalyzer implements AstVisitor<Void, ConnectContext
             throw new SemanticException(PARSER_ERROR_MSG.invalidColumnDef(e.getMessage()), columnDef.getPos());
         }
 
-        if (columnDef.getType().isTime()) {
+        if (columnDef.getType().isTime() && !table.isPaimonTable()) {
             throw new SemanticException("Unsupported data type: TIME");
         }
 

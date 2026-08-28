@@ -58,7 +58,8 @@ enum TDataSinkType {
     BLACKHOLE_TABLE_SINK,
     DICTIONARY_CACHE_SINK,
     MULTI_OLAP_TABLE_SINK,
-    SPLIT_DATA_STREAM_SINK
+    SPLIT_DATA_STREAM_SINK,
+    PAIMON_TABLE_SINK
 }
 
 enum TResultSinkType {
@@ -282,6 +283,48 @@ struct TTableFunctionTableSink {
     2: optional CloudConfiguration.TCloudConfiguration cloud_configuration
 }
 
+enum TPaimonWriterType {
+    AUTO = 0,
+    CPP = 1,
+    JNI = 2,
+}
+
+enum TPaimonWriteMode {
+    APPEND = 0,
+    OVERWRITE = 1,
+    UPDATE = 2,
+    DELETE = 3,
+    MERGE = 4,
+}
+
+// Paimon sink contract. Row-level DML writes a hidden row-kind tuple slot;
+// it is deliberately absent from the physical Paimon table schema.
+struct TPaimonTableSink {
+    1: optional Types.TTableId target_table_id
+    2: optional Types.TTupleId tuple_id
+
+    3: optional string catalog_name
+    4: optional string database_name
+    5: optional string table_name
+    6: optional string table_uuid
+    7: optional string table_location
+    8: optional map<string, string> table_options
+
+    9: optional list<Descriptors.TColumn> columns
+    10: optional list<string> partition_column_names
+    11: optional list<string> bucket_column_names
+    12: optional i32 bucket_count
+
+    13: optional TPaimonWriterType writer_type = TPaimonWriterType.AUTO
+    14: optional TPaimonWriteMode write_mode = TPaimonWriteMode.APPEND
+    15: optional Types.TSlotId row_kind_slot_id
+    16: optional map<string, string> overwrite_partition_spec
+
+    17: optional string commit_user
+    18: optional i64 commit_id
+    19: optional CloudConfiguration.TCloudConfiguration cloud_configuration
+}
+
 struct TSplitDataStreamSink {
     1: optional list<TDataStreamSink> sinks;
     2: optional list< list<TPlanFragmentDestination> > destinations;
@@ -305,4 +348,5 @@ struct TDataSink {
   15: optional list<TDataSink> multi_olap_table_sinks
   16: optional i64 sink_id
   17: optional TSplitDataStreamSink split_stream_sink
+  18: optional TPaimonTableSink paimon_table_sink
 }

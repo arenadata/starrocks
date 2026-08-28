@@ -51,6 +51,7 @@ import com.starrocks.sql.analyzer.SemanticException;
 import com.starrocks.sql.ast.DeleteStmt;
 import com.starrocks.sql.ast.DmlStmt;
 import com.starrocks.sql.ast.InsertStmt;
+import com.starrocks.sql.ast.MergeStmt;
 import com.starrocks.sql.ast.QueryRelation;
 import com.starrocks.sql.ast.QueryStatement;
 import com.starrocks.sql.ast.StatementBase;
@@ -167,6 +168,8 @@ public class StatementPlanner {
                 return new UpdatePlanner().plan((UpdateStmt) stmt, session);
             } else if (stmt instanceof DeleteStmt) {
                 return new DeletePlanner().plan((DeleteStmt) stmt, session);
+            } else if (stmt instanceof MergeStmt) {
+                return new MergePlanner().plan((MergeStmt) stmt, session);
             }
         } catch (OutOfMemoryError e) {
             LOG.warn("planner out of memory, sql is:" + stmt.getOrigStmt().getOrigStmt());
@@ -567,6 +570,8 @@ public class StatementPlanner {
             label = MetaUtils.genUpdateLabel(session.getExecutionId());
         } else if (stmt instanceof DeleteStmt) {
             label = MetaUtils.genDeleteLabel(session.getExecutionId());
+        } else if (stmt instanceof MergeStmt) {
+            label = MetaUtils.genInsertLabel(session.getExecutionId());
         } else {
             throw UnsupportedException.unsupportedException(
                     "Unsupported dml statement " + stmt.getClass().getSimpleName());
@@ -599,6 +604,7 @@ public class StatementPlanner {
                     tbl.getSourceTablePort(),
                     authenticateParams);
         } else if (targetTable instanceof SystemTable || targetTable.isIcebergTable() || targetTable.isHiveTable()
+                || targetTable.isPaimonTable()
                 || targetTable.isTableFunctionTable() || targetTable.isBlackHoleTable()) {
             // schema table and iceberg and hive table does not need txn
         } else {

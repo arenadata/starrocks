@@ -123,6 +123,7 @@ set(EXEC_FILES
     iceberg/iceberg_delete_builder.cpp
     iceberg/iceberg_delete_file_iterator.cpp
     paimon/paimon_delete_file_builder.cpp
+    paimon/paimon_reader_selector.cpp
     schema_scanner/schema_analyze_status.cpp
     schema_scanner/schema_tables_scanner.cpp
     schema_scanner/schema_dummy_scanner.cpp
@@ -342,7 +343,16 @@ set(EXEC_FILES
     stream/aggregate/agg_group_state.cpp
     stream/aggregate/stream_aggregator.cpp
     stream/aggregate/stream_aggregate_operator.cpp
-    stream/stream_aggregate_node.cpp)
+    stream/stream_aggregate_node.cpp
+    pipeline/sink/paimon_table_sink_operator.cpp
+    paimon/paimon_sink_provider.cpp)
+
+if (ENABLE_PAIMON_CPP)
+    list(APPEND EXEC_FILES
+        paimon/paimon_cpp_scanner.cpp
+        paimon/paimon_memory_pool.cpp
+        paimon/paimon_starrocks_file_system.cpp)
+endif()
 
 add_library(Exec STATIC
     ${EXEC_FILES}

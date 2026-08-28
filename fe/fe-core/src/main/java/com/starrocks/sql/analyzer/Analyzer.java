@@ -106,6 +106,7 @@ import com.starrocks.sql.ast.ExportStmt;
 import com.starrocks.sql.ast.InsertStmt;
 import com.starrocks.sql.ast.InstallPluginStmt;
 import com.starrocks.sql.ast.LoadStmt;
+import com.starrocks.sql.ast.MergeStmt;
 import com.starrocks.sql.ast.PauseRoutineLoadStmt;
 import com.starrocks.sql.ast.PrepareStmt;
 import com.starrocks.sql.ast.QueryStatement;
@@ -705,6 +706,12 @@ public class Analyzer {
 
         @Override
         public Void visitDeleteStatement(DeleteStmt statement, ConnectContext context) {
+            DMLStmtAnalyzer.analyze(statement, context);
+            return null;
+        }
+
+        @Override
+        public Void visitMergeStatement(MergeStmt statement, ConnectContext context) {
             DMLStmtAnalyzer.analyze(statement, context);
             return null;
         }

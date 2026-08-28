@@ -58,6 +58,16 @@ public class AstTraverser<R, C> implements AstVisitor<R, C> {
     }
 
     @Override
+    public R visitMergeStatement(MergeStmt statement, C context) {
+        if (statement.getQueryStatement() != null) {
+            visit(statement.getQueryStatement(), context);
+        } else {
+            visit(statement.getSource(), context);
+        }
+        return null;
+    }
+
+    @Override
     public R visitSubmitTaskStatement(SubmitTaskStmt statement, C context) {
         if (statement.getInsertStmt() != null) {
             visit(statement.getInsertStmt(), context);

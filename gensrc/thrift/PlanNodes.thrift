@@ -329,6 +329,14 @@ struct TPaimonDeletionFile {
     3: optional i64 length
 }
 
+// Reader implementation for a Paimon scan range. Keep explicit values for
+// rolling compatibility between FE and BE versions.
+enum TPaimonReaderType {
+    PAIMON_NATIVE = 0,
+    PAIMON_JNI = 1,
+    PAIMON_CPP = 2,
+}
+
 // refer to https://github.com/delta-io/delta/blob/master/PROTOCOL.md#deletion-vector-descriptor-schema
 struct TDeletionVectorDescriptor {
   1: optional string storageType
@@ -441,6 +449,14 @@ struct THdfsScanRange {
 
     // mapping transformed bucket id, used to schedule scan range
     36: optional i32 bucket_id;
+
+    // Explicit Paimon reader mode. use_paimon_jni_reader remains populated for
+    // compatibility with older BE versions.
+    37: optional TPaimonReaderType paimon_reader_type = TPaimonReaderType.PAIMON_NATIVE
+
+    // Paimon table context required to reconstruct a C++ reader.
+    38: optional string paimon_table_path
+    39: optional map<string, string> paimon_table_options
 }
 
 struct TBinlogScanRange {
