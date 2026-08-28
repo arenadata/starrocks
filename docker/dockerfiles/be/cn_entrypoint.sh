@@ -137,12 +137,6 @@ drop_my_self()
     done
 }
 
-exit_clean()
-{
-    log_stderr "Got SIGTERM, exit ..."
-    exit 143
-}
-
 svc_name=$1
 if [[ "x$svc_name" == "x" ]] ; then
     echo "Need a required parameter!"
@@ -153,7 +147,6 @@ fi
 update_conf_from_configmap
 collect_env_info
 add_self $svc_name || exit $?
-trap exit_clean SIGTERM
 
 log_stderr "run start_cn.sh"
 
@@ -162,14 +155,6 @@ if [[ "x$LOG_CONSOLE" == "x1" ]] ; then
     # env var `LOG_CONSOLE=1` can be added to enable logging to console
     addition_args="--logconsole"
 fi
-$STARROCKS_HOME/bin/start_cn.sh $addition_args
-ret=$?
-
-if [[ $ret -eq 0 || $ret -eq 137 ]] ; then
-    # The reason why we need to sleep here is to avoid the pod being killed by k8s before the preStop hook is exited.
-    # If the CN subprocess fails to start, we also want the entrypoint script to exit as soon as possible.
-    sleep 5
-fi
-
-# keep the same return code from start_cn.sh
-exit $ret
+# replace the shell with the CN process, so that it receives the container stop signal directly
+# and its exit status becomes the exit status of the container
+exec $STARROCKS_HOME/bin/start_cn.sh $addition_args
