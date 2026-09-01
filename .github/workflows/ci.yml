@@ -22,6 +22,15 @@ env:
     thirdparty/patches/**
 
 jobs:
+  entrypoint-scripts:
+    name: Entrypoint scripts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the entrypoint script tests
+        run: ./docker/dockerfiles/test/run_tests.sh
+
   thirdparty:
     name: Thirdparty
     runs-on: ubuntu-24.04

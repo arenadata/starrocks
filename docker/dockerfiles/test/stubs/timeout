@@ -1,0 +1,5 @@
+#!/bin/bash
+# `timeout` stub: runs the command without a time limit, so the tests do not depend on real timeouts
+# (and do not need GNU coreutils on macOS).
+shift
+exec "$@"

@@ -17,17 +17,25 @@
 
 package com.starrocks.common;
 
+import com.starrocks.common.util.Util;
+import mockit.Mock;
+import mockit.MockUp;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 
 public class ConfigTest {
     private final Config config = new Config();
+    // value returned by the mocked Util.isRunningInContainer(), see setUp()
+    private static boolean runningInContainer = false;
 
     private static class ConfigForTest extends ConfigBase {
         @ConfField(mutable = true, aliases = {"schedule_slot_num_per_path", "schedule_slot_num_per_path_only_for_test"})
@@ -36,6 +44,26 @@ public class ConfigTest {
 
     @BeforeEach
     public void setUp() throws Exception {
+        // the tests must not depend on whether they happen to run inside a container themselves
+        runningInContainer = false;
+        new MockUp<Util>() {
+            @Mock
+            public boolean isRunningInContainer() {
+                return runningInContainer;
+            }
+        };
+        loadTestConfigFile();
+    }
+
+    @AfterEach
+    public void tearDown() throws Exception {
+        // ConfigBase keeps whether configs can be persisted in a static field, reload a writable config file
+        // so that a test using a read-only one does not leak that state into the tests that follow
+        runningInContainer = false;
+        loadTestConfigFile();
+    }
+
+    private void loadTestConfigFile() throws Exception {
         URL resource = getClass().getClassLoader().getResource("conf/config_test.properties");
         assert resource != null;
         config.init(Paths.get(resource.toURI()).toFile().getAbsolutePath());
@@ -177,5 +205,81 @@ public class ConfigTest {
         ConfigForArray.setConfigField(ConfigForArray.getAllMutableConfigs().get("prop_array_long"), "");
         configs = ConfigForArray.getConfigInfo(null);
         Assertions.assertEquals("[]", configs.get(2).get(2));
+    }
+
+    private Path writeTempConfigFile() throws Exception {
+        Path confFile = Files.createTempFile("fe", ".conf");
+        confFile.toFile().deleteOnExit();
+        Files.writeString(confFile, "adaptive_choose_instances_threshold = 99\n");
+        return confFile;
+    }
+
+    /**
+     * `ADMIN SET FRONTEND CONFIG ... WITH PERSIST` has to be rejected with a message naming the reason when
+     * fe.conf can not be written, which is the case when it comes from a read-only mount (ConfigMap/Secret
+     * volume) or when the container runs with a read-only root filesystem.
+     */
+    @Test
+    public void testSetPersistedConfigRejectedWhenConfigFileIsNotWritable() throws Exception {
+        Path confFile = writeTempConfigFile();
+        // a process running as root ignores the file permissions
+        Assumptions.assumeTrue(confFile.toFile().setReadOnly(), "the config file can not be made read-only, skipping");
+        Assumptions.assumeFalse(Files.isWritable(confFile), "the config file is writable, skipping");
+
+        config.init(confFile.toString());
+        Assertions.assertFalse(ConfigBase.isIsPersisted());
+
+        int valueBefore = Config.adaptive_choose_instances_threshold;
+        InvalidConfException e = Assertions.assertThrows(InvalidConfException.class,
+                () -> Config.setMutableConfig("adaptive_choose_instances_threshold", "98", true, "root"));
+        Assertions.assertTrue(e.getMessage().contains("adaptive_choose_instances_threshold"), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains(confFile.toString()), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains("is not writable"), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains("WITH PERSIST"), e.getMessage());
+        // the value is rejected as a whole, it is not applied in memory either
+        Assertions.assertEquals(valueBefore, Config.adaptive_choose_instances_threshold);
+
+        // the same config can still be changed in memory only
+        Config.setMutableConfig("adaptive_choose_instances_threshold", "98", false, "root");
+        Assertions.assertEquals(98, Config.adaptive_choose_instances_threshold);
+    }
+
+    /**
+     * The images create /.dockerenv, a persisted value would be lost with the container, so persisting is
+     * refused there even when fe.conf happens to be writable.
+     */
+    @Test
+    public void testSetPersistedConfigRejectedInContainer() throws Exception {
+        runningInContainer = true;
+
+        Path confFile = writeTempConfigFile();
+        Assertions.assertTrue(Files.isWritable(confFile));
+
+        config.init(confFile.toString());
+        Assertions.assertFalse(ConfigBase.isIsPersisted());
+
+        InvalidConfException e = Assertions.assertThrows(InvalidConfException.class,
+                () -> Config.setMutableConfig("adaptive_choose_instances_threshold", "98", true, "root"));
+        Assertions.assertTrue(e.getMessage().contains("container"), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains("WITH PERSIST"), e.getMessage());
+        // the configuration file is left untouched
+        Assertions.assertEquals("adaptive_choose_instances_threshold = 99\n", Files.readString(confFile));
+    }
+
+    /**
+     * A writable fe.conf outside of a container keeps working: the value is applied and written back.
+     */
+    @Test
+    public void testSetPersistedConfigWritesTheConfigFile() throws Exception {
+        Path confFile = writeTempConfigFile();
+        Assumptions.assumeTrue(Files.isWritable(confFile), "the config file is not writable, skipping");
+
+        config.init(confFile.toString());
+        Assertions.assertTrue(ConfigBase.isIsPersisted());
+        Assertions.assertNull(ConfigBase.getPersistUnavailableReason());
+
+        Config.setMutableConfig("adaptive_choose_instances_threshold", "98", true, "root");
+        Assertions.assertEquals(98, Config.adaptive_choose_instances_threshold);
+        Assertions.assertTrue(Files.readString(confFile).contains("adaptive_choose_instances_threshold = 98"));
     }
 }

@@ -305,7 +305,7 @@ else
     echo "[INFO] Can't find available HADOOP common lib, disable HdfsFileSystemTest related test!"
     append_negative_case "HdfsFileSystemTest*"
 fi
-# HADOOP_CLASSPATH defined in $STARROCKS_HOME/conf/hadoop_env.sh
+# HADOOP_CLASSPATH defined in $STARROCKS_HOME/bin/hadoop_env.sh
 # put $STARROCKS_HOME/conf ahead of $HADOOP_CLASSPATH so that custom config can replace the config in $HADOOP_CLASSPATH
 export CLASSPATH=$STARROCKS_HOME/conf:$HADOOP_CLASSPATH:$CLASSPATH
 export CLASSPATH=${STARROCKS_HOME}/java-extensions/udf-extensions/target/*:$CLASSPATH

@@ -5,23 +5,18 @@
 # * COREDUMP_ENABLED: when it's set to true and BE process is crashed, a coredump is generated and the BE process would be restarted;
 # * DEBUG_MODE: when it's set to true, BE process is restarted always;
 
+ENTRYPOINT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$ENTRYPOINT_DIR/entrypoint_common.sh"
+
 HOST_TYPE=${HOST_TYPE:-"IP"}
 FE_QUERY_PORT=${FE_QUERY_PORT:-9030}
-PROBE_TIMEOUT=60
-PROBE_INTERVAL=2
+PROBE_TIMEOUT=${PROBE_TIMEOUT:-60}
+PROBE_INTERVAL=${PROBE_INTERVAL:-2}
 HEARTBEAT_PORT=9050
 MY_SELF=
-MY_IP=`hostname -i`
-MY_HOSTNAME=`hostname -f`
 STARROCKS_ROOT=${STARROCKS_ROOT:-"/opt/starrocks"}
 export STARROCKS_HOME=${STARROCKS_ROOT}/be
 BE_CONFIG=$STARROCKS_HOME/conf/be.conf
-
-
-log_stderr()
-{
-    echo "[`date`] $@" >&2
-}
 
 # Debug mode supervisor (DEBUG_MODE / COREDUMP_ENABLED): the shell stays alive to restart BE after a crash.
 # Signals sent to the container (tini forwards them only to this script) must then be forwarded to the
@@ -121,56 +116,27 @@ run_be_debug_loop()
     done
 }
 
-update_conf_from_configmap()
+show_backends()
 {
-    if [[ "x$CONFIGMAP_MOUNT_PATH" == "x" ]] ; then
-        log_stderr 'Empty $CONFIGMAP_MOUNT_PATH env var, skip it!'
-        return 0
-    fi
-    if ! test -d $CONFIGMAP_MOUNT_PATH ; then
-        log_stderr "$CONFIGMAP_MOUNT_PATH not exist or not a directory, ignore ..."
-        return 0
-    fi
-    local tgtconfdir=$STARROCKS_HOME/conf
-    for conffile in `ls $CONFIGMAP_MOUNT_PATH`
-    do
-        log_stderr "Process conf file $conffile ..."
-        local tgt=$tgtconfdir/$conffile
-        if test -e $tgt ; then
-            # make a backup
-            mv -f $tgt ${tgt}.bak
-        fi
-        ln -sfT $CONFIGMAP_MOUNT_PATH/$conffile $tgt
-    done
+    local svc=$1
+    sr_mysql $svc $FE_QUERY_PORT 'SHOW BACKENDS;'
 }
 
-show_backends(){
-    timeout 15 mysql --connect-timeout 2 -h $svc -P $FE_QUERY_PORT -u root --skip-column-names --batch -e 'SHOW BACKENDS;'
-}
-
-parse_confval_from_cn_conf()
+parse_confval_from_be_conf()
 {
-    # a naive script to grep given confkey from cn conf file
-    # assume conf format: ^\s*<key>\s*=\s*<value>\s*$
-    local confkey=$1
-    local confvalue=`grep "\<$confkey\>" $BE_CONFIG | grep -v '^\s*#' | sed 's|^\s*'$confkey'\s*=\s*\(.*\)\s*$|\1|g'`
-    echo "$confvalue"
+    parse_confval_from_conf "$BE_CONFIG" "$1"
 }
 
 collect_env_info()
 {
+    # set MY_IP, MY_HOSTNAME and MY_SELF
+    collect_host_info
+
     # heartbeat_port from conf file
-    local heartbeat_port=`parse_confval_from_cn_conf "heartbeat_service_port"`
+    local heartbeat_port=`parse_confval_from_be_conf "heartbeat_service_port"`
     if [[ "x$heartbeat_port" != "x" ]] ; then
         HEARTBEAT_PORT=$heartbeat_port
     fi
-
-    if [[ "x$HOST_TYPE" == "xIP" ]] ; then
-        MY_SELF=$MY_IP
-    else
-        MY_SELF=$MY_HOSTNAME
-    fi
-
 }
 
 add_self()
@@ -182,7 +148,7 @@ add_self()
     while true
     do
         log_stderr "Add myself ($MY_SELF:$HEARTBEAT_PORT) into FE ..."
-        timeout 15 mysql --connect-timeout 2 -h $svc -P $FE_QUERY_PORT -u root --skip-column-names --batch -e "ALTER SYSTEM ADD BACKEND \"$MY_SELF:$HEARTBEAT_PORT\";"
+        sr_mysql $svc $FE_QUERY_PORT "ALTER SYSTEM ADD BACKEND \"$MY_SELF:$HEARTBEAT_PORT\";"
         memlist=`show_backends $svc`
         if echo "$memlist" | grep -q -w "$MY_SELF" &>/dev/null ; then
             break;
@@ -207,7 +173,6 @@ if [[ "x$svc_name" == "x" ]] ; then
     exit 1
 fi
 
-update_conf_from_configmap
 collect_env_info
 add_self $svc_name || exit $?
 log_stderr "run start_be.sh"

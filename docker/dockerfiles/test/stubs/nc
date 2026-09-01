@@ -1,0 +1,4 @@
+#!/bin/bash
+# `nc` stub: the entrypoint scripts only use it as a "is the FE service listening" probe.
+echo "$*" >> "${NC_CALL_LOG:-/dev/null}"
+exit ${NC_STUB_RC:-0}
