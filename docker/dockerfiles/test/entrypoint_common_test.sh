@@ -91,6 +91,30 @@ test_sr_mysql_command_line()
     assert_contains "$call" "show frontends;" "statement is passed"
 }
 
+# The client of the images negotiates TLS by itself, but it verifies the certificate only when it is told
+# to, which a deployment that turned TLS on for a reason will want for the statements below.
+test_sr_mysql_without_tls_options()
+{
+    setup_fixture fe
+    eval_in_common 'sr_mysql fe-svc 9030 "show frontends;"' > /dev/null
+    local call
+    call=$(cat "$MYSQL_CALL_LOG")
+    assert_not_contains "$call" "--ssl-mode" "no TLS options unless the deployment asks for them"
+    assert_not_contains "$call" "--ssl-ca" "no TLS options unless the deployment asks for them"
+}
+
+test_sr_mysql_with_tls_options()
+{
+    setup_fixture fe
+    export SR_MYSQL_SSL_MODE=VERIFY_CA SR_MYSQL_SSL_CA=/etc/starrocks/tls/ca.pem
+    eval_in_common 'sr_mysql fe-svc 9030 "show frontends;"' > /dev/null
+    local call
+    call=$(cat "$MYSQL_CALL_LOG")
+    assert_contains "$call" "--ssl-mode=VERIFY_CA" "the ssl mode is passed on"
+    assert_contains "$call" "--ssl-ca=/etc/starrocks/tls/ca.pem" "the CA is passed on"
+    assert_contains "$call" "show frontends;" "the statement is still passed on"
+}
+
 echo "entrypoint_common.sh"
 run_test test_pid_dir_defaults_to_tmp
 run_test test_pid_dir_from_environment_is_kept
@@ -101,4 +125,6 @@ run_test test_collect_host_info_defaults_to_ip
 run_test test_collect_host_info_honours_fqdn
 run_test test_collect_host_info_prefers_the_pod_environment
 run_test test_sr_mysql_command_line
+run_test test_sr_mysql_without_tls_options
+run_test test_sr_mysql_with_tls_options
 report_and_exit

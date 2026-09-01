@@ -32,6 +32,15 @@ What still has to be writable:
   the configuration entries that default into the installation directory (`spill_local_storage_dir`,
   `small_file_dir`, `user_function_dir`, FE `tmp_dir`) at a writable volume if you use those features.
 
+### Registering a node against a FE that requires TLS
+
+The entrypoint scripts register the node they start by calling `mysql` against the FE. The client shipped
+with the images negotiates TLS on its own as soon as the FE offers it (its default is
+`--ssl-mode=PREFERRED`), so a FE with `ssl_force_secure_transport = true` needs no extra configuration -
+but the certificate of the server is not verified. Set `SR_MYSQL_SSL_MODE=VERIFY_CA` (or
+`VERIFY_IDENTITY`) together with `SR_MYSQL_SSL_CA=<path to the CA in a mounted volume>` to have those
+statements go over a verified connection.
+
 `ADMIN SET FRONTEND CONFIG ... WITH PERSIST` is rejected inside a container, because the configuration file
 belongs to the image or to the mounted volume and a persisted value would be lost on the next restart.
 Change such a setting in the deployment's configuration and restart the FEs instead.

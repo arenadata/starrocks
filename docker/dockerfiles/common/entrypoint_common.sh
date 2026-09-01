@@ -23,6 +23,14 @@ export PID_DIR=${PID_DIR:-/tmp}
 SR_MYSQL_TIMEOUT=${SR_MYSQL_TIMEOUT:-15}
 SR_MYSQL_CONNECT_TIMEOUT=${SR_MYSQL_CONNECT_TIMEOUT:-2}
 
+# TLS of the `mysql` calls below. The client shipped with the images negotiates TLS on its own as soon as
+# the FE offers it (its default is --ssl-mode=PREFERRED), which is enough for a FE that refuses
+# unencrypted connections (ssl_force_secure_transport), but it does not verify the certificate. Set
+# SR_MYSQL_SSL_MODE=VERIFY_CA (or VERIFY_IDENTITY) together with SR_MYSQL_SSL_CA to have the node register
+# itself over a verified connection.
+SR_MYSQL_SSL_MODE=${SR_MYSQL_SSL_MODE:-}
+SR_MYSQL_SSL_CA=${SR_MYSQL_SSL_CA:-}
+
 log_stderr()
 {
     echo "[`date`] $@" >&2
@@ -76,6 +84,13 @@ sr_mysql()
     local host=$1
     local port=$2
     local sql=$3
-    timeout $SR_MYSQL_TIMEOUT mysql --connect-timeout $SR_MYSQL_CONNECT_TIMEOUT \
+    local ssl_opts=
+    if [[ "x$SR_MYSQL_SSL_MODE" != "x" ]] ; then
+        ssl_opts+=" --ssl-mode=$SR_MYSQL_SSL_MODE"
+    fi
+    if [[ "x$SR_MYSQL_SSL_CA" != "x" ]] ; then
+        ssl_opts+=" --ssl-ca=$SR_MYSQL_SSL_CA"
+    fi
+    timeout $SR_MYSQL_TIMEOUT mysql --connect-timeout $SR_MYSQL_CONNECT_TIMEOUT $ssl_opts \
         -h $host -P $port -u root --skip-column-names --batch -e "$sql"
 }
