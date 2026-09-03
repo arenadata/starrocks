@@ -40,7 +40,13 @@ int AsyncDeltaWriter::_execute(void* meta, bthread::TaskIterator<AsyncDeltaWrite
     watch.start();
     for (; iter; ++iter) {
         num_tasks += 1;
-        pending_time_ns += MonotonicNanos() - iter->create_time_ns;
+        int64_t task_pending_time_ns = MonotonicNanos() - iter->create_time_ns;
+        pending_time_ns += task_pending_time_ns;
+        // Update the stat before running any callback below: a callback can unblock a caller
+        // synchronously waiting on it (the CountDownLatch in LocalTabletsChannel::add_chunk), and that
+        // caller may read this stat through the tablet's profile as soon as it wakes up, so the stat has
+        // to be visible to it by then rather than after the whole batch has been drained.
+        writer->update_task_stat(1, task_pending_time_ns);
         Status st;
         if (iter->abort) {
             writer->abort(iter->abort_with_log);
@@ -88,7 +94,6 @@ int AsyncDeltaWriter::_execute(void* meta, bthread::TaskIterator<AsyncDeltaWrite
         LOG_IF(WARNING, !st.ok()) << "Fail to flush. txn_id: " << writer->txn_id()
                                   << " tablet_id: " << writer->tablet()->tablet_id() << ": " << st;
     }
-    writer->update_task_stat(num_tasks, pending_time_ns);
     StarRocksMetrics::instance()->async_delta_writer_execute_total.increment(1);
     StarRocksMetrics::instance()->async_delta_writer_task_total.increment(num_tasks);
     StarRocksMetrics::instance()->async_delta_writer_task_execute_duration_us.increment(watch.elapsed_time() / 1000);
