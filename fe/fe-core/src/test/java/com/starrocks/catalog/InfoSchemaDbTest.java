@@ -80,8 +80,11 @@ public class InfoSchemaDbTest {
                 + "AGGREGATE KEY(k1, k2,k3,k4) distributed by hash(k1) buckets 3 properties('replication_num' = '1');";
         starRocksAssert.withTable("create table db.tbl " + createTblStmtStr);
         starRocksAssert.withView("create view db.v as select * from db.tbl");
-        starRocksAssert.withMaterializedView(
-                "create materialized view db.mv distributed by hash(k4) buckets 10 REFRESH ASYNC as select * from db.tbl");
+        // DEFERRED, so that creating the view does not start a refresh task: the task runs in a background
+        // thread, and every call it makes to a mocked method while a test of this class has an Expectations
+        // block open is recorded as an expectation of that test, which then fails with a MissingInvocation.
+        starRocksAssert.withMaterializedView("create materialized view db.mv distributed by hash(k4) buckets 10 "
+                + "REFRESH DEFERRED ASYNC as select * from db.tbl");
 
         GlobalStateMgr.getCurrentState().setAuthenticationMgr(new AuthenticationMgr());
         GlobalStateMgr.getCurrentState().setAuthorizationMgr(new AuthorizationMgr(new DefaultAuthorizationProvider()));
@@ -343,17 +346,20 @@ public class InfoSchemaDbTest {
             }
         };
 
-        MetadataMgr metadataMgr = ctx.getGlobalStateMgr().getMetadataMgr();
-        new Expectations(metadataMgr) {
-            {
-                metadataMgr.getDb((ConnectContext) any, (String) any, (String) any);
-                result = new com.starrocks.catalog.Database(0, "db");
-                minTimes = 0;
+        // MockUp and not Expectations: an Expectations block opens a recording phase that is global to the
+        // JVM, so a call another thread makes to a mocked method while the block is open becomes a recorded
+        // expectation of this test - and the materialized view threads of this class do call MetadataMgr.
+        // Both methods are pure stubs, they were recorded with minTimes = 0 and nothing verifies them.
+        new MockUp<MetadataMgr>() {
+            @Mock
+            public Database getDb(ConnectContext context, String catalogName, String dbName) {
+                return new Database(0, "db");
+            }
 
-                metadataMgr.getTable((ConnectContext) any, (String) any, (String) any, (String) any);
-                result = HiveTable.builder().setHiveTableName("tbl")
+            @Mock
+            public Table getTable(ConnectContext context, String catalogName, String dbName, String tblName) {
+                return HiveTable.builder().setHiveTableName("tbl")
                         .setFullSchema(Lists.newArrayList(new Column("v1", Type.INT))).build();
-                minTimes = 0;
             }
         };
 
