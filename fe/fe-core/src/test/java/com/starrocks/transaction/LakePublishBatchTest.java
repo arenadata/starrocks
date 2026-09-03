@@ -66,6 +66,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.validation.constraints.NotNull;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -132,6 +133,31 @@ public class LakePublishBatchTest {
             }
             return true;
         });
+    }
+
+    /**
+     * Returns the ready to publish batch that holds the given transactions. The batches of the other
+     * tables of this class are ready at the same time, so a test must not simply take the first one.
+     */
+    private TransactionStateBatch awaitReadyBatch(GlobalTransactionMgr globalTransactionMgr, long... txnIds) {
+        AtomicReference<TransactionStateBatch> found = new AtomicReference<>();
+        Awaitility.await().atMost(30, TimeUnit.SECONDS).pollInterval(100, TimeUnit.MILLISECONDS).until(() -> {
+            for (TransactionStateBatch batch : globalTransactionMgr.getReadyPublishTransactionsBatch()) {
+                boolean holdsAll = true;
+                for (long txnId : txnIds) {
+                    if (!batch.getTxnIds().contains(txnId)) {
+                        holdsAll = false;
+                        break;
+                    }
+                }
+                if (holdsAll) {
+                    found.set(batch);
+                    return true;
+                }
+            }
+            return false;
+        });
+        return found.get();
     }
 
     @BeforeAll
@@ -572,47 +598,58 @@ public class LakePublishBatchTest {
         VisibleStateWaiter waiter2 = globalTransactionMgr.commitTransaction(db.getId(), transactionId2, transTablets,
                 Lists.newArrayList(), null);
 
-        {
-            TransactionStateBatch readyStateBatch = globalTransactionMgr.getReadyPublishTransactionsBatch().get(0);
-            Assertions.assertEquals(2, readyStateBatch.size());
+        // Take the batch that holds the transactions of this test instead of the first ready one: the two
+        // tables of this class are published independently, so the first batch may well be the one of the
+        // other table, and every assertion below would then check partitions the batch does not cover.
+        TransactionStateBatch readyStateBatch = awaitReadyBatch(globalTransactionMgr, transactionId1, transactionId2);
+        Assertions.assertEquals(2, readyStateBatch.size());
 
-            DatabaseTransactionMgr transactionMgr = globalTransactionMgr.getDatabaseTransactionMgr(db.getId());
-            Assertions.assertTrue(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
+        DatabaseTransactionMgr transactionMgr = globalTransactionMgr.getDatabaseTransactionMgr(db.getId());
+        Assertions.assertTrue(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
 
-            // keep origin version
-            Map<Partition, Long> partitionVersions = new HashMap<>();
+        // keep origin version
+        Map<Partition, Long> partitionVersions = new HashMap<>();
+        for (Partition partition : table.getPartitions()) {
+            partitionVersions.put(partition, partition.getDefaultPhysicalPartition().getVisibleVersion());
+        }
+        try {
             for (Partition partition : table.getPartitions()) {
-                partitionVersions.put(partition, partition.getDefaultPhysicalPartition().getVisibleVersion());
                 partition.getDefaultPhysicalPartition().setVisibleVersion(0, System.currentTimeMillis());
             }
             Assertions.assertFalse(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
-
-            // restore partition version
+        } finally {
+            // restore the partition versions even when the assertion fails: a visible version of 0 leaves
+            // a version gap behind, and the batch publish of every following test on this table stalls
             for (Map.Entry<Partition, Long> entry : partitionVersions.entrySet()) {
                 entry.getKey().getDefaultPhysicalPartition()
                         .setVisibleVersion(entry.getValue(), System.currentTimeMillis());
             }
-            Assertions.assertTrue(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
+        }
+        Assertions.assertTrue(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
 
-            TransactionState transactionState2 = readyStateBatch.getTransactionStates().get(1);
-            Collection<PartitionCommitInfo> partitionCommitInfos = transactionState2.getTableCommitInfo(table.getId())
-                    .getIdToPartitionCommitInfo().values();
-            Map<PartitionCommitInfo, Long> originPartitionCommitInfos = new HashMap<>();
+        TransactionState transactionState2 = readyStateBatch.getTransactionStates().get(1);
+        Collection<PartitionCommitInfo> partitionCommitInfos = transactionState2.getTableCommitInfo(table.getId())
+                .getIdToPartitionCommitInfo().values();
+        Map<PartitionCommitInfo, Long> originPartitionCommitInfos = new HashMap<>();
+        for (PartitionCommitInfo partitionCommitInfo : partitionCommitInfos) {
+            originPartitionCommitInfos.put(partitionCommitInfo, partitionCommitInfo.getVersion());
+        }
+        try {
             for (PartitionCommitInfo partitionCommitInfo : partitionCommitInfos) {
-                originPartitionCommitInfos.put(partitionCommitInfo, partitionCommitInfo.getVersion());
                 partitionCommitInfo.setVersion(99);
             }
             Assertions.assertFalse(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
-
-            // restore
+        } finally {
+            // restore, for the same reason
             for (Map.Entry<PartitionCommitInfo, Long> entry : originPartitionCommitInfos.entrySet()) {
                 entry.getKey().setVersion(entry.getValue());
             }
-            Assertions.assertTrue(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
-
-            PublishVersionDaemon publishVersionDaemon = new PublishVersionDaemon();
-            publishVersionDaemon.runAfterCatalogReady();
         }
+        Assertions.assertTrue(transactionMgr.checkTxnStateBatchConsistent(db, readyStateBatch));
+
+        // publish what this test committed instead of only kicking the daemon once: an unpublished batch
+        // would still be ready when the next test asks for one, and it would get this one
+        awaitPublish(new PublishVersionDaemon(), waiter1, waiter2);
     }
 
     @Test
