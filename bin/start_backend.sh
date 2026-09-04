@@ -88,7 +88,11 @@ fi
 
 # enable jemalloc
 JEMALLOC_LIB=$STARROCKS_HOME/lib/libjemalloc.so
-ln -s -f $STARROCKS_HOME/lib/libjemalloc.so.2 $JEMALLOC_LIB
+# The symlink is part of the distribution, create it only when it is missing so that a regular start does
+# not write into the installation directory (it may be read-only).
+if [ ! -e $JEMALLOC_LIB ] ; then
+    ln -s -f $STARROCKS_HOME/lib/libjemalloc.so.2 $JEMALLOC_LIB
+fi
 export LD_LIBRARY_PATH=$STARROCKS_HOME/lib:$LD_LIBRARY_PATH
 
 # Set JEMALLOC_CONF environment variable if not already set
@@ -110,6 +114,12 @@ export LSAN_OPTIONS=suppressions=${STARROCKS_HOME}/conf/asan_suppressions.conf
 
 
 # ================== jvm section =======================
+# hadoop_env.sh belongs to the installation and is shipped in bin/, so that it survives replacing conf/
+# with a mounted configuration (ConfigMap/Secret volume). conf/hadoop_env.sh is still sourced afterwards as
+# a user provided override.
+if [ -e $STARROCKS_HOME/bin/hadoop_env.sh ]; then
+    source $STARROCKS_HOME/bin/hadoop_env.sh
+fi
 if [ -e $STARROCKS_HOME/conf/hadoop_env.sh ]; then
     source $STARROCKS_HOME/conf/hadoop_env.sh
 fi
@@ -155,9 +165,11 @@ export LIBHDFS_OPTS=$final_java_opt
 # Otherwise, JVM will overwrite the signal handlers for SIGINT and SIGTERM.
 export LIBHDFS_OPTS="$LIBHDFS_OPTS -Xrs"
 
-# HADOOP_CLASSPATH defined in $STARROCKS_HOME/conf/hadoop_env.sh
+# HADOOP_CLASSPATH defined in $STARROCKS_HOME/bin/hadoop_env.sh
 # put $STARROCKS_HOME/conf ahead of $HADOOP_CLASSPATH so that custom config can replace the config in $HADOOP_CLASSPATH
-export CLASSPATH=${STARROCKS_HOME}/lib/jni-packages/starrocks-hadoop-ext.jar:$STARROCKS_HOME/conf:$STARROCKS_HOME/lib/jni-packages/*:$HADOOP_CLASSPATH:$CLASSPATH
+# $STARROCKS_HOME/lib/default-conf holds the configuration files shipped with the installation
+# (core-site.xml, log4j2.properties). It goes after $STARROCKS_HOME/conf, so a user provided file always wins.
+export CLASSPATH=${STARROCKS_HOME}/lib/jni-packages/starrocks-hadoop-ext.jar:$STARROCKS_HOME/conf:$STARROCKS_HOME/lib/default-conf:$STARROCKS_HOME/lib/jni-packages/*:$HADOOP_CLASSPATH:$CLASSPATH
 
 
 # ================= native section =====================

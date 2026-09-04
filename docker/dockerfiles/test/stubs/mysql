@@ -1,0 +1,31 @@
+#!/bin/bash
+# `mysql` stub: records the full command line into $MYSQL_CALL_LOG and answers the SHOW statements the
+# entrypoint scripts rely on from the files named by the STUB_*_FILE variables.
+
+echo "$*" >> "${MYSQL_CALL_LOG:-/dev/null}"
+
+sql=
+prev=
+for arg in "$@" ; do
+    if [[ "$prev" == "-e" ]] ; then
+        sql=$arg
+    fi
+    prev=$arg
+done
+
+answer_from()
+{
+    if [[ -n "$1" && -f "$1" ]] ; then
+        cat "$1"
+    fi
+}
+
+shopt -s nocasematch
+case "$sql" in
+    *"show frontends"*)      answer_from "$STUB_SHOW_FRONTENDS_FILE" ;;
+    *"show backends"*)       answer_from "$STUB_SHOW_BACKENDS_FILE" ;;
+    *"show compute nodes"*)  answer_from "$STUB_SHOW_COMPUTE_NODES_FILE" ;;
+esac
+shopt -u nocasematch
+
+exit ${MYSQL_STUB_RC:-0}

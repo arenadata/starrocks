@@ -57,6 +57,9 @@ COPY --from=artifacts --chown=$USER:$GROUP /release/fe_artifacts/ $STARROCKS_ROO
 # Copy fe k8s scripts to the runtime container image
 COPY --chown=$USER:$GROUP docker/dockerfiles/fe/*.sh $STARROCKS_ROOT/
 
+# Copy the entrypoint helpers shared by the FE/BE/CN images
+COPY --chown=$USER:$GROUP docker/dockerfiles/common/*.sh $STARROCKS_ROOT/
+
 # FE performs a graceful exit (drain connections, hand over leadership) on SIGUSR1 only,
 # SIGTERM is a plain exit. Let `docker stop` / kubelet send SIGUSR1; fe_entrypoint.sh forwards it to the JVM.
 STOPSIGNAL SIGUSR1

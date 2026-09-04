@@ -526,10 +526,12 @@ TEST_F(MemLimitedChunkQueueTest, test_concurrent_load_flush) {
 
         ASSERT_OK(queue.push(builder.get_next()));
         SyncPoint::GetInstance()->EnableProcessing();
+        // both dependencies have to be loaded at once: LoadDependency replaces the whole dependency
+        // graph, so a second call would drop the ordering between can_pop and the flush task and let
+        // the task flush the block before the reader is registered on it
         SyncPoint::GetInstance()->LoadDependency(
-                {{"MemLimitedChunkQueue::can_pop::return_true::1", "MemLimitedChunkQueue::before_execute_flush_task"}});
-        SyncPoint::GetInstance()->LoadDependency(
-                {{"MemLimitedChunkQueue::after_execute_flush_task", "MemLimitedChunkQueue::pop::before_pop"}});
+                {{"MemLimitedChunkQueue::can_pop::return_true::1", "MemLimitedChunkQueue::before_execute_flush_task"},
+                 {"MemLimitedChunkQueue::after_execute_flush_task", "MemLimitedChunkQueue::pop::before_pop"}});
         SyncPoint::GetInstance()->SetCallBack("MemLimitedChunkQueue::flush::after_find_block_to_flush", [&](void* arg) {
             MemLimitedChunkQueue::Block* block = (MemLimitedChunkQueue::Block*)arg;
             // this block is about to be read, won't be flushed

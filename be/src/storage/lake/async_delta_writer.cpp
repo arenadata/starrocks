@@ -189,7 +189,13 @@ inline int AsyncDeltaWriterImpl::execute(void* meta, bthread::TaskIterator<Async
         }
         auto task_ptr = *iter;
         num_tasks += 1;
-        pending_time_ns += MonotonicNanos() - task_ptr->create_time_ns;
+        int64_t task_pending_time_ns = MonotonicNanos() - task_ptr->create_time_ns;
+        pending_time_ns += task_pending_time_ns;
+        // Update the per-tablet stat before running the callback below: the callback can unblock a
+        // caller synchronously waiting on it (e.g. the CountDownLatch in LakeTabletsChannel::add_chunk),
+        // and that caller may read this stat through the tablet's profile as soon as it wakes up, so the
+        // stat has to be visible to it by then rather than after the whole batch has been drained.
+        delta_writer->update_task_stat(1, task_pending_time_ns);
         switch (task_ptr->type) {
         case kWriteTask: {
             auto write_task = std::static_pointer_cast<WriteTask>(task_ptr);
@@ -253,7 +259,6 @@ inline int AsyncDeltaWriterImpl::execute(void* meta, bthread::TaskIterator<Async
         }
         }
     }
-    async_writer->_writer->update_task_stat(num_tasks, pending_time_ns);
     StarRocksMetrics::instance()->async_delta_writer_execute_total.increment(1);
     StarRocksMetrics::instance()->async_delta_writer_task_total.increment(num_tasks);
     StarRocksMetrics::instance()->async_delta_writer_task_execute_duration_us.increment(watch.elapsed_time() /

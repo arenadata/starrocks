@@ -82,7 +82,7 @@ export_shared_envvars() {
     # UDF_RUNTIME_DIR
     # LOG_DIR
     # PID_DIR
-    export UDF_RUNTIME_DIR=${STARROCKS_HOME}/lib/udf-runtime
+    export UDF_RUNTIME_DIR=${UDF_RUNTIME_DIR:-${STARROCKS_HOME}/lib/udf-runtime}
     export LOG_DIR=${STARROCKS_HOME}/log
     export PID_DIR=${PID_DIR:-`cd "$curdir"; pwd`}
 

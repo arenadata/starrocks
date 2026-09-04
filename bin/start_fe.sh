@@ -75,6 +75,12 @@ export LOG_DIR="$STARROCKS_HOME/log"
 export PID_DIR=${PID_DIR:-`cd "$curdir"; pwd`}
 export_env_from_conf $STARROCKS_HOME/conf/fe.conf
 
+# hadoop_env.sh belongs to the installation and is shipped in bin/, so that it survives replacing conf/
+# with a mounted configuration (ConfigMap/Secret volume). conf/hadoop_env.sh is still sourced afterwards as
+# a user provided override.
+if [ -e $STARROCKS_HOME/bin/hadoop_env.sh ]; then
+    source $STARROCKS_HOME/bin/hadoop_env.sh
+fi
 if [ -e $STARROCKS_HOME/conf/hadoop_env.sh ]; then
     source $STARROCKS_HOME/conf/hadoop_env.sh
 fi
@@ -125,7 +131,7 @@ if [ -z "$final_java_opt" ] ; then
     if [ -z "$DATE" ] ; then
         DATE=`date +%Y%m%d-%H%M%S`
     fi
-    final_java_opt="-Dlog4j2.formatMsgNoLookups=true -Xmx8192m -XX:+UseG1GC -Xlog:gc*:${LOG_DIR}/fe.gc.log.$DATE:time -Djava.security.policy=${STARROCKS_HOME}/conf/udf_security.policy"
+    final_java_opt="-Dlog4j2.formatMsgNoLookups=true -Xmx8192m -XX:+UseG1GC -Xlog:gc*:${LOG_DIR}/fe.gc.log.$DATE:time -XX:ErrorFile=${LOG_DIR}/hs_err_pid%p.log -Djava.security.policy=${STARROCKS_HOME}/conf/udf_security.policy"
     echo "JAVA_OPTS is not set in fe.conf, use default java options to start fe process: $final_java_opt"
 fi
 
@@ -174,7 +180,9 @@ mkdir -p ${meta_dir:-"$STARROCKS_HOME/meta"}
 for f in $STARROCKS_HOME/lib/*.jar; do
   CLASSPATH=$f:${CLASSPATH};
 done
-export CLASSPATH=${STARROCKS_HOME}/lib/starrocks-hadoop-ext.jar:${CLASSPATH}:${STARROCKS_HOME}/lib:${STARROCKS_HOME}/conf
+# ${STARROCKS_HOME}/lib/default-conf holds the configuration files shipped with the installation
+# (core-site.xml). It goes after ${STARROCKS_HOME}/conf, so a user provided file always wins.
+export CLASSPATH=${STARROCKS_HOME}/lib/starrocks-hadoop-ext.jar:${CLASSPATH}:${STARROCKS_HOME}/lib:${STARROCKS_HOME}/conf:${STARROCKS_HOME}/lib/default-conf
 
 pidfile=$PID_DIR/fe.pid
 
@@ -205,14 +213,9 @@ fi
 
 LOG_FILE=$LOG_DIR/fe.out
 
-if [ ${RUN_LOG_CONSOLE} -eq 1 ] ; then
-    if [ ! -w $STARROCKS_HOME/conf/fe.conf ] ; then
-        # workaround configmap readonly, can't change its content
-        mv $STARROCKS_HOME/conf/fe.conf $STARROCKS_HOME/conf/fe.conf.readonly
-        cp $STARROCKS_HOME/conf/fe.conf.readonly $STARROCKS_HOME/conf/fe.conf
-    fi
-else
-    # redirect all subsequent commands' stdout/stderr into $LOG_FILE
+# When logging to console is requested the FE process picks it up from SYS_LOG_TO_CONSOLE below,
+# otherwise redirect all subsequent commands' stdout/stderr into $LOG_FILE
+if [ ${RUN_LOG_CONSOLE} -ne 1 ] ; then
     exec >> $LOG_FILE 2>&1
 fi
 export SYS_LOG_TO_CONSOLE=${RUN_LOG_CONSOLE}

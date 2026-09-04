@@ -1,0 +1,7 @@
+#!/bin/bash
+# `hostname` stub: the pod address is not resolvable in the test environment.
+case "$1" in
+    -i) echo "${STUB_POD_IP:-10.0.0.7}" ;;
+    -f) echo "${STUB_POD_FQDN:-sr-fe-0.sr-fe-svc.sr.svc.cluster.local}" ;;
+    *)  echo "${STUB_HOSTNAME:-sr-fe-0}" ;;
+esac

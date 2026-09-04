@@ -99,6 +99,9 @@ public class ConfigBase {
 
     protected Properties props;
     private static boolean isPersisted = false;
+    // Why persisting a config into the configuration file is not possible. Null when it is possible,
+    // reported to the user when `ADMIN SET FRONTEND CONFIG ... WITH PERSIST` is rejected.
+    private static String persistUnavailableReason = "the configuration file has not been loaded yet";
     private static String configPath;
     protected static Field[] configFields;
     protected static Map<String, Field> allMutableConfigs = new HashMap<>();
@@ -111,8 +114,18 @@ public class ConfigBase {
         try (FileReader reader = new FileReader(propFile)) {
             props.load(reader);
         }
-        if (Files.isWritable(Path.of(propFile)) && !Util.isRunningInContainer()) {
+        if (Util.isRunningInContainer()) {
+            // the configuration file belongs to the container image or to a volume mounted over it,
+            // a persisted value would be lost on the next restart of the container
+            isPersisted = false;
+            persistUnavailableReason = "FE runs in a container, where the configuration file is provided by " +
+                    "the deployment and a persisted value would be lost on the next restart";
+        } else if (!Files.isWritable(Path.of(propFile))) {
+            isPersisted = false;
+            persistUnavailableReason = "the configuration file " + propFile + " is not writable";
+        } else {
             isPersisted = true;
+            persistUnavailableReason = null;
         }
 
         replacedByEnv();
@@ -121,6 +134,10 @@ public class ConfigBase {
 
     public static boolean isIsPersisted() {
         return isPersisted;
+    }
+
+    public static String getPersistUnavailableReason() {
+        return persistUnavailableReason;
     }
 
     public static void initAllMutableConfigs() {
@@ -332,7 +349,10 @@ public class ConfigBase {
                                                      boolean isPersisted, String userIdentity) throws InvalidConfException {
         if (isPersisted) {
             if (!ConfigBase.isIsPersisted()) {
-                String errMsg = "set persisted config failed, because current running mode is not persisted";
+                String errMsg = String.format("Can not persist the new value of '%s': %s. Change it in the " +
+                                "configuration file of every FE and restart them, or set it without WITH PERSIST " +
+                                "to change it in memory only.",
+                        key, ConfigBase.getPersistUnavailableReason());
                 LOG.warn(errMsg);
                 throw new InvalidConfException(errMsg);
             }

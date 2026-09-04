@@ -57,6 +57,9 @@ COPY --from=artifacts --chown=$USER:$GROUP /release/be_artifacts/ $STARROCKS_ROO
 # Copy be k8s scripts to the runtime container image
 COPY --chown=$USER:$GROUP docker/dockerfiles/be/*.sh $STARROCKS_ROOT/
 
+# Copy the entrypoint helpers shared by the FE/BE/CN images
+COPY --chown=$USER:$GROUP docker/dockerfiles/common/*.sh $STARROCKS_ROOT/
+
 # Create directory for BE storage, create cn symbolic link to be
 RUN mkdir -p $STARROCKS_ROOT/be/storage && ln -sfT be $STARROCKS_ROOT/cn
 
