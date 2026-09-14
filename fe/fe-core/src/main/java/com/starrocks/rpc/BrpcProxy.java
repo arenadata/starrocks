@@ -22,6 +22,7 @@ import com.starrocks.common.Config;
 import com.starrocks.common.util.DnsCache;
 import com.starrocks.service.FrontendOptions;
 import com.starrocks.thrift.TNetworkAddress;
+import io.netty.handler.ssl.SslContext;
 
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -32,6 +33,11 @@ public class BrpcProxy {
     private final ConcurrentHashMap<TNetworkAddress, LakeService> lakeServiceMap;
 
     public BrpcProxy() {
+        SslContext sslContext = BrpcSslContextLoader.getSslContext();
+        if (Config.brpc_enable_ssl && sslContext == null) {
+            throw new IllegalStateException("bRPC TLS is enabled but BrpcSslContextLoader.load() never ran");
+        }
+
         final RpcClientOptions rpcOptions = new RpcClientOptions();
         // If false, different methods to a service endpoint use different connection pool,
         // which will create too many connections.
@@ -51,6 +57,9 @@ public class BrpcProxy {
         rpcOptions.setInnerResuePool(Config.brpc_inner_reuse_pool);
 
         rpcClient = new RpcClient(rpcOptions);
+        if (sslContext != null) {
+            rpcClient.handler(new BrpcSslPipelineInitializer(rpcClient, sslContext));
+        }
         backendServiceMap = new ConcurrentHashMap<>();
         lakeServiceMap = new ConcurrentHashMap<>();
     }
