@@ -14,6 +14,7 @@
 
 package com.starrocks.rpc;
 
+import com.starrocks.common.Config;
 import com.starrocks.common.util.DnsCache;
 import com.starrocks.service.FrontendOptions;
 import com.starrocks.thrift.TNetworkAddress;
@@ -40,6 +41,17 @@ public class BrpcProxyTest {
             serviceRef.set(BrpcProxy.getLakeService(address));
         });
         return serviceRef.get();
+    }
+
+    @Test
+    public void testRejectsTlsWithoutALoadedContext() {
+        boolean saved = Config.brpc_enable_ssl;
+        try {
+            Config.brpc_enable_ssl = true;
+            Assertions.assertThrows(IllegalStateException.class, BrpcProxy::new);
+        } finally {
+            Config.brpc_enable_ssl = saved;
+        }
     }
 
     @Test

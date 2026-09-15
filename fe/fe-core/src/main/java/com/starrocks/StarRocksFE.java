@@ -56,6 +56,7 @@ import com.starrocks.leader.MetaHelper;
 import com.starrocks.qe.ConnectScheduler;
 import com.starrocks.qe.CoordinatorMonitor;
 import com.starrocks.qe.QeService;
+import com.starrocks.rpc.BrpcSslContextLoader;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.server.GracefulExitFlag;
 import com.starrocks.server.RunMode;
@@ -174,6 +175,8 @@ public class StarRocksFE {
             FrontendOptions.saveStartType();
 
             CoordinatorMonitor.getInstance().start();
+
+            BrpcSslContextLoader.load();
 
             // init and start:
             // 1. QeService for MySQL Server

@@ -1012,6 +1012,29 @@ public class Config extends ConfigBase {
     @ConfField
     public static boolean brpc_inner_reuse_pool = true;
 
+    // Enable TLS on the bRPC connections from FE to BE/CN. Requires enable_https=true in
+    // be.conf/cn.conf. Covers this hop only: BE-to-BE bRPC stays plaintext, and the BE/CN bRPC port
+    // keeps accepting plaintext from other clients.
+    @ConfField
+    public static boolean brpc_enable_ssl = false;
+
+    // Truststore holding the CA certificates that signed the BE/CN bRPC certificates.
+    // Required when brpc_enable_ssl is on.
+    @ConfField
+    public static String brpc_ssl_truststore_location = "";
+
+    @ConfField
+    public static String brpc_ssl_truststore_password = "";
+
+    // Bind the BE/CN certificate to the address it is reached at. FE dials BE/CN by IP, so this
+    // needs certificates carrying a matching IP SAN.
+    @ConfField
+    public static boolean brpc_ssl_verify_hostname = false;
+
+    // How long a bRPC TLS handshake may take before the connection attempt fails.
+    @ConfField
+    public static int brpc_ssl_handshake_timeout_ms = 5000;
+
     /**
      * FE mysql server port
      */
