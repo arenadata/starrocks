@@ -348,7 +348,11 @@ _be_ut_mem_gb=$(awk '/MemTotal/{print int($2/1024/1024)}' /proc/meminfo 2>/dev/n
 _be_ut_workers=$(( _be_ut_mem_gb / 4 ))
 [ ${_be_ut_workers} -gt ${_be_ut_cores} ] && _be_ut_workers=${_be_ut_cores}
 [ ${_be_ut_workers} -lt 1 ] && _be_ut_workers=1
-GTEST_PARALLEL_OPTIONS=${GTEST_PARALLEL_OPTIONS:--w ${_be_ut_workers} --timeout_per_test 600}
+# --retry_failed 1: re-run a failed test once. The exit code comes from the last attempt, so a flaky test that
+#   passes on retry does not fail the run, but it is still listed under "FAILED TESTS" with its try number.
+# --output_dir: keep per-test logs in ${CMAKE_BUILD_DIR}/gtest-parallel-logs/{passed,failed,timed_out,interrupted}
+#   instead of deleted temp files, so that CI can upload the logs of failed tests.
+GTEST_PARALLEL_OPTIONS=${GTEST_PARALLEL_OPTIONS:--w ${_be_ut_workers} --timeout_per_test 600 --retry_failed 1 --output_dir ${CMAKE_BUILD_DIR}}
 if [[ $TEST_MODULE == '.*'  || $TEST_MODULE == 'starrocks_test' ]]; then
   echo "Run test: ${STARROCKS_TEST_BINARY_DIR}/starrocks_test"
   if [ ${DRY_RUN} -eq 0 ]; then

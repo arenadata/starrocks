@@ -129,5 +129,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: be-ut-log
-          path: be/ut_build_ASAN/gtest-parallel-logs/
+          path: |
+            be/ut_build_ASAN/gtest-parallel-logs/failed/
+            be/ut_build_ASAN/gtest-parallel-logs/timed_out/
+            be/ut_build_ASAN/gtest-parallel-logs/interrupted/
           if-no-files-found: ignore
