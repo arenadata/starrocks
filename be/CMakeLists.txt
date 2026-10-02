@@ -1228,6 +1228,7 @@ install(FILES
     ${BASE_DIR}/../conf/be_test.conf
     ${BASE_DIR}/../conf/cn.conf
     ${BASE_DIR}/../conf/log4j2.properties
+    ${BASE_DIR}/../conf/log4j.properties
     ${BASE_DIR}/../conf/core-site.xml
     DESTINATION ${OUTPUT_DIR}/conf)
 
