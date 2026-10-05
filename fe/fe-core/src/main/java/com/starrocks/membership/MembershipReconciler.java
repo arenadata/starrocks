@@ -95,6 +95,10 @@ public class MembershipReconciler extends FrontendDaemon {
         if (expected.isEmpty()) {
             return;
         }
+        if (expected.get().isEmpty()) {
+            LOG.warn("desired frontend set is empty, no frontend is dropped until the provider lists any");
+            return;
+        }
         Map<HostPort, FrontendSpec> desired = new HashMap<>();
         expected.get().forEach(spec -> desired.put(spec.hostPort(), spec));
         HostPort self = HostPort.of(nodeMgr.getSelfNode());

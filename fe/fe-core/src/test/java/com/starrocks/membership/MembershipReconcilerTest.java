@@ -191,13 +191,29 @@ public class MembershipReconcilerTest {
     }
 
     @Test
+    public void testEmptyDesiredSetDropsNothing() throws Exception {
+        NodeMgr nodeMgr = clusterOfThree();
+        fe(nodeMgr, "192.168.8.2").setAlive(false);
+        fe(nodeMgr, "192.168.8.3").setAlive(false);
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.expectedFrontends = Optional.of(Set.of());
+        MembershipReconciler reconciler = reconciler(provider, nodeMgr, new SystemInfoService());
+
+        reconciler.reconcileFrontends();
+        now.addAndGet(2 * GRACE_MS);
+        reconciler.reconcileFrontends();
+        reconciler.reconcileFrontends();
+        Assertions.assertEquals(3, nodeMgr.getAllFrontends().size());
+    }
+
+    @Test
     public void testSelfIsNeverDroppedAndOneDropPerRound() throws Exception {
         NodeMgr nodeMgr = clusterOfThree();
         fe(nodeMgr, SELF.host()).setAlive(false);
         fe(nodeMgr, "192.168.8.2").setAlive(false);
         fe(nodeMgr, "192.168.8.3").setAlive(false);
         FakeMembershipProvider provider = new FakeMembershipProvider();
-        provider.expectedFrontends = Optional.of(Set.of());
+        provider.expectedFrontends = Optional.of(Set.of(new FrontendSpec(SELF, FrontendNodeType.FOLLOWER)));
         MembershipReconciler reconciler = reconciler(provider, nodeMgr, new SystemInfoService());
 
         reconciler.reconcileFrontends();
