@@ -121,6 +121,11 @@ jobs:
         env:
           TIMEOUT: 600
         run: ./docker/dockerfiles/test/membership-e2e/run.sh
+      - name: Run the zookeeper membership e2e test
+        env:
+          PROVIDER: zookeeper
+          TIMEOUT: 600
+        run: ./docker/dockerfiles/test/membership-e2e/run.sh
       - name: Upload e2e logs
         if: failure()
         uses: actions/upload-artifact@v4
