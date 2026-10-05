@@ -41,7 +41,7 @@ ENABLE_DEBUGGER=0
 FAILPOINT=
 RUN_LOG_CONSOLE=${SYS_LOG_TO_CONSOLE:-0}
 # min jdk version required
-MIN_JDK_VERSION=17
+MIN_JDK_VERSION=21
 while true; do
     case "$1" in
         --daemon) RUN_DAEMON=1 ; shift ;;
