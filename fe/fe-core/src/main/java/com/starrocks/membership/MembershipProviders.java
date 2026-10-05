@@ -98,6 +98,11 @@ public final class MembershipProviders {
         }
         FrontendNodeType role = parseRole(Config.fe_membership_role);
         validateInitialState(Config.fe_cluster_initial_state);
+        if (isInitialStateNew()) {
+            LOG.warn("fe_cluster_initial_state is new: this FE creates a new cluster when no seed answers. "
+                    + "fe_seed_nodes must be the same, in the same order, on every FE of the cluster; switch "
+                    + "to 'existing' once the cluster is running");
+        }
 
         MembershipContext ctx = new MembershipContext(
                 new HostPort(FrontendOptions.getLocalHostAddress(), Config.edit_log_port), role, FrontendOptions.isUseFqdn());

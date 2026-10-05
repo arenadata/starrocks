@@ -2211,13 +2211,16 @@ public class Config extends ConfigBase {
     /**
      * Whether an FE with empty meta may bootstrap a new cluster when it finds no leader: existing or new.
      * With existing it waits for a leader; with new the bootstrap candidate creates the cluster.
+     * Switch to existing once the cluster is running: with new, the bootstrap candidate that lost its meta
+     * creates a second cluster instead of rejoining.
      */
     @ConfField
     public static String fe_cluster_initial_state = "existing";
 
     /**
      * Comma separated host:edit_log_port list of FEs a fresh FE asks for the leader.
-     * The first entry is the bootstrap candidate when fe_cluster_initial_state is new.
+     * The first entry is the bootstrap candidate when fe_cluster_initial_state is new, so the list must be
+     * the same, in the same order, on every FE of one cluster.
      */
     @ConfField
     public static String fe_seed_nodes = "";
