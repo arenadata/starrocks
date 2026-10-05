@@ -68,6 +68,15 @@ public class MembershipJoinerTest {
         }
     }
 
+    private static class ClosableClient extends FakeClient implements AutoCloseable {
+        boolean closed = false;
+
+        @Override
+        public void close() {
+            closed = true;
+        }
+    }
+
     private static class CountingSleeper implements MembershipJoiner.Sleeper {
         int sleeps = 0;
         Runnable onSleep = () -> { };
@@ -90,6 +99,15 @@ public class MembershipJoinerTest {
     private static MembershipJoiner joiner(FakeMembershipProvider provider, FakeClient client, CountingSleeper sleeper,
                                            boolean stateNew, List<HostPort> extraSeeds) {
         return new MembershipJoiner(provider, CTX, extraSeeds, client, sleeper, () -> stateNew);
+    }
+
+    @Test
+    public void testCloseClosesTheClient() {
+        ClosableClient client = new ClosableClient();
+        MembershipJoiner joiner = joiner(new FakeMembershipProvider(), client, new CountingSleeper(), false,
+                List.of());
+        joiner.close();
+        Assertions.assertTrue(client.closed);
     }
 
     @Test

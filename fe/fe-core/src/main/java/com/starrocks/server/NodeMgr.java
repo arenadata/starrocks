@@ -536,10 +536,13 @@ public class NodeMgr {
                 .filter(helper -> !helper.equals(selfNode))
                 .map(HostPort::of)
                 .collect(Collectors.toList());
-        MembershipJoiner.Decision decision = MembershipJoiner.forStartup(cliHelpers).resolve();
-        helperNodes.clear();
-        helperNodes.add(decision.bootstrap() ? selfNode : decision.helper().toPair());
-        LOG.info("membership decision: {}, helper nodes: {}", decision.bootstrap() ? "bootstrap" : "join", helperNodes);
+        try (MembershipJoiner joiner = MembershipJoiner.forStartup(cliHelpers)) {
+            MembershipJoiner.Decision decision = joiner.resolve();
+            helperNodes.clear();
+            helperNodes.add(decision.bootstrap() ? selfNode : decision.helper().toPair());
+            LOG.info("membership decision: {}, helper nodes: {}",
+                    decision.bootstrap() ? "bootstrap" : "join", helperNodes);
+        }
     }
 
     // Get the role info and node name from helper node.

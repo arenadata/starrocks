@@ -33,7 +33,7 @@ import java.util.function.BooleanSupplier;
  * membership API, or bootstrap a new cluster when the provider allows it. Waits as long as it takes;
  * only configuration errors (bad token, host conflict, wrong run mode) abort the start.
  */
-public final class MembershipJoiner {
+public final class MembershipJoiner implements AutoCloseable {
     private static final Logger LOG = LogManager.getLogger(MembershipJoiner.class);
 
     /** What a seed reports about the leader. */
@@ -108,6 +108,18 @@ public final class MembershipJoiner {
     @VisibleForTesting
     public static void setClientForTest(LeaderClient client) {
         clientOverride = client;
+    }
+
+    /** Releases the leader client when it holds resources, e.g. the HTTP client of forStartup. */
+    @Override
+    public void close() {
+        if (client instanceof AutoCloseable closeable) {
+            try {
+                closeable.close();
+            } catch (Exception e) {
+                LOG.warn("failed to close the leader client: {}", e.getMessage());
+            }
+        }
     }
 
     /** Blocks until the node has joined or may bootstrap. */

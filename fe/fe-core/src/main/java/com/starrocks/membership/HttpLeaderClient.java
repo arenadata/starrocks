@@ -35,7 +35,7 @@ import java.util.Optional;
  * Membership API client over plain HTTP on the FE http_port. Redirects of a join request to the
  * current leader are followed once.
  */
-final class HttpLeaderClient implements MembershipJoiner.LeaderClient {
+final class HttpLeaderClient implements MembershipJoiner.LeaderClient, AutoCloseable {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final HttpClient http;
@@ -113,6 +113,11 @@ final class HttpLeaderClient implements MembershipJoiner.LeaderClient {
             Thread.currentThread().interrupt();
             throw new IOException("interrupted while calling " + request.uri(), e);
         }
+    }
+
+    @Override
+    public void close() {
+        http.close();
     }
 
     private static URI uri(String host, int port, String path) {
