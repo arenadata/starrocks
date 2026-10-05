@@ -31,6 +31,7 @@ import com.starrocks.membership.MembershipJoinService;
 import com.starrocks.membership.MembershipJoinService.ComputeNodeJoinResult;
 import com.starrocks.membership.MembershipJoinService.FrontendJoinResult;
 import com.starrocks.membership.MembershipJoinService.JoinException;
+import com.starrocks.membership.MembershipProviders;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.server.NodeMgr;
 import com.starrocks.server.RunMode;
@@ -59,6 +60,9 @@ public final class MembershipAction {
     }
 
     public static void registerAction(ActionController controller) throws IllegalArgException {
+        if (!MembershipProviders.isEnabled()) {
+            return;
+        }
         controller.registerHandler(HttpMethod.GET, LEADER_PATH, new LeaderAction(controller));
         controller.registerHandler(HttpMethod.POST, JOIN_PATH, new JoinAction(controller));
     }
