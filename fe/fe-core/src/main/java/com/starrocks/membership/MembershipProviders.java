@@ -82,6 +82,7 @@ public final class MembershipProviders {
         }
         if (reconciler == null) {
             reconciler = MembershipReconciler.forCurrentState(provider);
+            provider.addChangeListener(reconciler::trigger);
             reconciler.start();
         }
     }

@@ -45,6 +45,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 public class ZookeeperMembershipProviderTest {
 
@@ -209,5 +210,21 @@ public class ZookeeperMembershipProviderTest {
         first.isBootstrapCandidate();
 
         Assertions.assertEquals(List.of(new HostPort("10.0.0.1", 9010)), second.seeds());
+    }
+
+    @Test
+    public void testMembershipChangeFiresListener() throws Exception {
+        ZookeeperMembershipProvider leader = started("10.0.0.1");
+        AtomicInteger fired = new AtomicInteger();
+        leader.addChangeListener(fired::incrementAndGet);
+
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.create().creatingParentsIfNeeded().forPath(
+                    Config.fe_membership_zookeeper_root + "/compute_nodes/10.0.0.1:9050", new byte[0]);
+        }
+
+        Awaitility.await().atMost(15, TimeUnit.SECONDS).until(() -> fired.get() >= 1);
     }
 }

@@ -29,6 +29,8 @@ import com.starrocks.membership.MembershipException;
 import com.starrocks.membership.MembershipProvider;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.framework.recipes.cache.CuratorCache;
+import org.apache.curator.framework.recipes.cache.CuratorCacheListener;
 import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.retry.ExponentialBackoffRetry;
 import org.apache.logging.log4j.LogManager;
@@ -73,6 +75,8 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     private CuratorFramework client;
     private volatile String startingNode;
     private volatile MemberInfo announced;
+    private volatile Runnable onChange;
+    private CuratorCache watcher;
 
     @Override
     public String name() {
@@ -392,8 +396,42 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     record ComputeNodePayload(String warehouse, String cnGroup) {
     }
 
+    /**
+     * Watches the membership branches and fires the listener on every change of an announced frontend
+     * or a desired compute node, so the reconciler runs without waiting for its interval.
+     */
+    @Override
+    public synchronized void addChangeListener(Runnable onChange) {
+        this.onChange = onChange;
+        if (watcher != null) {
+            return;
+        }
+        watcher = CuratorCache.build(client, root);
+        watcher.listenable().addListener(CuratorCacheListener.builder()
+                .forCreates(child -> membershipChanged(child.getPath()))
+                .forChanges((previous, node) -> membershipChanged(node.getPath()))
+                .forDeletes(child -> membershipChanged(child.getPath()))
+                .build());
+        watcher.start();
+        LOG.info("zookeeper membership: watching for changes under {}", root);
+    }
+
+    private void membershipChanged(String path) {
+        Runnable listener = onChange;
+        if (listener == null) {
+            return;
+        }
+        if (path.startsWith(frontends() + "/") || path.startsWith(computeNodes() + "/")) {
+            listener.run();
+        }
+    }
+
     @Override
     public synchronized void close() {
+        if (watcher != null) {
+            watcher.close();
+            watcher = null;
+        }
         if (client != null) {
             startingNode = null;
             client.close();
