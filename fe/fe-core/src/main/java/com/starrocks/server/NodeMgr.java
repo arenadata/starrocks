@@ -51,6 +51,10 @@ import com.starrocks.ha.HAProtocol;
 import com.starrocks.ha.LeaderInfo;
 import com.starrocks.http.meta.MetaBaseAction;
 import com.starrocks.leader.MetaHelper;
+import com.starrocks.membership.HostPort;
+import com.starrocks.membership.MembershipException;
+import com.starrocks.membership.MembershipJoiner;
+import com.starrocks.membership.MembershipProviders;
 import com.starrocks.persist.ImageWriter;
 import com.starrocks.persist.OperationType;
 import com.starrocks.persist.Storage;
@@ -263,7 +267,7 @@ public class NodeMgr {
         removeMetaFileIfExist(Storage.VERSION_FILE);
     }
 
-    public void getClusterIdAndRoleOnStartup() throws IOException {
+    public void getClusterIdAndRoleOnStartup() throws IOException, MembershipException {
         String imageDir = GlobalStateMgr.getImageDirPath();
         File roleFile = new File(imageDir, Storage.ROLE_FILE);
         File versionFile = new File(imageDir, Storage.VERSION_FILE);
@@ -285,12 +289,21 @@ public class NodeMgr {
             }
         }
 
+        if (MembershipProviders.isEnabled() && !(roleFile.exists() && versionFile.exists())) {
+            resolveHelpersThroughMembership();
+        }
+
         // if helper node is point to self, or there is ROLE and VERSION file in local.
         // get the node type from local
         if (isMyself() || (roleFile.exists() && versionFile.exists())) {
 
             if (!isMyself()) {
                 LOG.info("find ROLE and VERSION file in local, ignore helper nodes: {}", helperNodes);
+                if (helperNodes.size() > 1) {
+                    Pair<String, Integer> first = helperNodes.get(0);
+                    helperNodes.clear();
+                    helperNodes.add(first);
+                }
             }
 
             // check file integrity, if has.
@@ -511,6 +524,22 @@ public class NodeMgr {
 
         Preconditions.checkState(helperNodes.size() == 1);
         LOG.info("Got role: {}, node name: {} and run_mode: {}", role.name(), nodeName, runMode);
+    }
+
+    /**
+     * With a membership provider an FE with empty meta finds the leader itself: it registers through the
+     * membership API and continues with the leader as helper, or bootstraps when the provider allows it.
+     * The --helper addresses, if any, serve as extra seeds.
+     */
+    private void resolveHelpersThroughMembership() throws MembershipException {
+        List<HostPort> cliHelpers = helperNodes.stream()
+                .filter(helper -> !helper.equals(selfNode))
+                .map(HostPort::of)
+                .collect(Collectors.toList());
+        MembershipJoiner.Decision decision = MembershipJoiner.forStartup(cliHelpers).resolve();
+        helperNodes.clear();
+        helperNodes.add(decision.bootstrap() ? selfNode : decision.helper().toPair());
+        LOG.info("membership decision: {}, helper nodes: {}", decision.bootstrap() ? "bootstrap" : "join", helperNodes);
     }
 
     // Get the role info and node name from helper node.
