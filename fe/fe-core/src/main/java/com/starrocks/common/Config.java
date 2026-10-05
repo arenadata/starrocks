@@ -2238,6 +2238,27 @@ public class Config extends ConfigBase {
     public static String fe_membership_embedded_members_file = "";
 
     /**
+     * ZooKeeper ensemble of the zookeeper membership provider, comma separated host:port list.
+     * Required when fe_membership_provider is zookeeper.
+     */
+    @ConfField
+    public static String fe_membership_zookeeper_servers = "";
+
+    /**
+     * ZooKeeper znode the membership state of this cluster lives under: cluster id, announced frontends,
+     * desired compute nodes. One ensemble can serve several clusters with different roots.
+     */
+    @ConfField
+    public static String fe_membership_zookeeper_root = "/starrocks/fe-membership";
+
+    /**
+     * ZooKeeper session timeout in milliseconds. An FE that loses its session drops out of the announced
+     * frontend set for this long before ZooKeeper expires its ephemeral node.
+     */
+    @ConfField
+    public static int fe_membership_zookeeper_session_timeout_ms = 30000;
+
+    /**
      * Seconds between attempts of an FE with empty meta to find the leader through the membership provider.
      */
     @ConfField
