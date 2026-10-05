@@ -64,11 +64,15 @@ final class HttpLeaderClient implements MembershipJoiner.LeaderClient, AutoClose
                     + response.statusCode() + " " + errorMessage(response.body()));
         }
         JsonNode node = MAPPER.readTree(response.body());
-        return Optional.of(new LeaderInfo(
-                HostPort.parse(node.path("leader").asText()),
-                node.path("leader_http_port").asInt(Config.http_port),
-                node.path("cluster_id").asText(),
-                node.path("run_mode").asText()));
+        try {
+            return Optional.of(new LeaderInfo(
+                    HostPort.parse(node.path("leader").asText()),
+                    node.path("leader_http_port").asInt(Config.http_port),
+                    node.path("cluster_id").asText(),
+                    node.path("run_mode").asText()));
+        } catch (IllegalArgumentException e) {
+            throw new IOException("malformed leader answer from " + seed + ": " + response.body(), e);
+        }
     }
 
     @Override
@@ -91,10 +95,14 @@ final class HttpLeaderClient implements MembershipJoiner.LeaderClient, AutoClose
             return JoinOutcome.failed(response.statusCode(), errorMessage(response.body()));
         }
         JsonNode node = MAPPER.readTree(response.body());
-        return new JoinOutcome(200, "",
-                FrontendNodeType.valueOf(node.path("role").asText()),
-                node.path("node_name").asText(),
-                HostPort.parse(node.path("helper").asText()));
+        try {
+            return new JoinOutcome(200, "",
+                    FrontendNodeType.valueOf(node.path("role").asText()),
+                    node.path("node_name").asText(),
+                    HostPort.parse(node.path("helper").asText()));
+        } catch (IllegalArgumentException e) {
+            throw new IOException("malformed join answer from " + joinUri + ": " + response.body(), e);
+        }
     }
 
     private HttpRequest joinRequest(URI uri, String body) {
