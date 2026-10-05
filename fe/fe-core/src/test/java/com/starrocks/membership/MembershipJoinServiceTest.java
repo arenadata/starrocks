@@ -14,6 +14,7 @@
 
 package com.starrocks.membership;
 
+import com.starrocks.common.Config;
 import com.starrocks.common.Pair;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.membership.MembershipJoinService.ComputeNodeJoinResult;
@@ -27,6 +28,9 @@ import com.starrocks.utframe.UtFrameUtils;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 
 public class MembershipJoinServiceTest {
 
@@ -102,5 +106,51 @@ public class MembershipJoinServiceTest {
                 () -> service.joinComputeNode(new HostPort("192.168.7.10", 9050), "no_such_warehouse", null));
         Assertions.assertEquals(MembershipJoinService.STATUS_CONFLICT, unknownWarehouse.getStatus());
         Assertions.assertEquals(1, systemInfo.getComputeNodes().size());
+    }
+
+    @Test
+    public void testJoinComputeNodeWaitsForLock() throws Exception {
+        SystemInfoService systemInfo = new SystemInfoService();
+        MembershipJoinService service = new MembershipJoinService(leaderNodeMgr(), systemInfo);
+        HostPort node = new HostPort("192.168.7.11", 9050);
+        GlobalStateMgr globalStateMgr = GlobalStateMgr.getCurrentState();
+        long previousTimeoutMs = Config.catalog_try_lock_timeout_ms;
+        Config.catalog_try_lock_timeout_ms = 100;
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = holdGlobalStateLock(globalStateMgr, release);
+        try {
+            JoinException busy = Assertions.assertThrows(JoinException.class,
+                    () -> service.joinComputeNode(node, null, null));
+            Assertions.assertEquals(MembershipJoinService.STATUS_UNAVAILABLE, busy.getStatus());
+        } finally {
+            release.countDown();
+            holder.join(TimeUnit.SECONDS.toMillis(10));
+            Config.catalog_try_lock_timeout_ms = previousTimeoutMs;
+        }
+
+        ComputeNodeJoinResult result = service.joinComputeNode(node, null, null);
+        Assertions.assertFalse(result.existed());
+        Assertions.assertNotNull(systemInfo.getComputeNodeWithHeartbeatPort("192.168.7.11", 9050));
+    }
+
+    /** The global state lock is reentrant, so it must be held by another thread to be observable. */
+    private static Thread holdGlobalStateLock(GlobalStateMgr globalStateMgr, CountDownLatch release)
+            throws InterruptedException {
+        CountDownLatch held = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            globalStateMgr.tryLock(true);
+            held.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                globalStateMgr.unlock();
+            }
+        });
+        holder.setDaemon(true);
+        holder.start();
+        Assertions.assertTrue(held.await(10, TimeUnit.SECONDS));
+        return holder;
     }
 }

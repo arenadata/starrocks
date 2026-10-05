@@ -34,6 +34,8 @@ import java.net.InetSocketAddress;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class MembershipReconcilerTest {
@@ -243,5 +245,44 @@ public class MembershipReconcilerTest {
         Config.fe_membership_auto_add_cn = false;
         reconciler.reconcileComputeNodes();
         Assertions.assertTrue(systemInfo.getComputeNodes().isEmpty());
+    }
+
+    @Test
+    public void testComputeNodeAddWaitsForLock() throws Exception {
+        SystemInfoService systemInfo = new SystemInfoService();
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.expectedComputeNodes = Optional.of(Set.of(new ComputeNodeSpec(new HostPort("192.168.8.12", 9050))));
+        MembershipReconciler reconciler = reconciler(provider, new LeaderNodeMgr(), systemInfo);
+        GlobalStateMgr globalStateMgr = GlobalStateMgr.getCurrentState();
+        long previousTimeoutMs = Config.catalog_try_lock_timeout_ms;
+        Config.catalog_try_lock_timeout_ms = 100;
+        CountDownLatch held = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        Thread holder = new Thread(() -> {
+            globalStateMgr.tryLock(true);
+            held.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                globalStateMgr.unlock();
+            }
+        });
+        holder.setDaemon(true);
+        holder.start();
+        Assertions.assertTrue(held.await(10, TimeUnit.SECONDS));
+
+        try {
+            reconciler.reconcileComputeNodes();
+            Assertions.assertTrue(systemInfo.getComputeNodes().isEmpty());
+        } finally {
+            release.countDown();
+            holder.join(TimeUnit.SECONDS.toMillis(10));
+            Config.catalog_try_lock_timeout_ms = previousTimeoutMs;
+        }
+
+        reconciler.reconcileComputeNodes();
+        Assertions.assertEquals(1, systemInfo.getComputeNodes().size());
     }
 }

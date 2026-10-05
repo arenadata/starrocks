@@ -147,19 +147,28 @@ public class MembershipReconciler extends FrontendDaemon {
         List<ComputeNode> current = systemInfo.getComputeNodes();
 
         if (Config.fe_membership_auto_add_cn) {
-            for (ComputeNodeSpec spec : expected.get()) {
-                boolean registered = current.stream()
-                        .anyMatch(cn -> new HostPort(cn.getHost(), cn.getHeartbeatPort()).sameNode(spec.hostPort()));
-                if (registered) {
-                    continue;
-                }
+            GlobalStateMgr globalStateMgr = GlobalStateMgr.getCurrentState();
+            if (!globalStateMgr.tryLock(false)) {
+                LOG.warn("globalStateMgr lock is busy, adding desired compute nodes is postponed to the next round");
+            } else {
                 try {
-                    systemInfo.checkSameNodeExist(spec.hostPort().host(), spec.hostPort().port());
-                    systemInfo.addComputeNode(spec.hostPort().host(), spec.hostPort().port(), spec.warehouse(),
-                            spec.cnGroup());
-                    LOG.info("added compute node {} from the desired membership", spec);
-                } catch (DdlException e) {
-                    LOG.warn("failed to add compute node {}: {}", spec, e.getMessage());
+                    for (ComputeNodeSpec spec : expected.get()) {
+                        boolean registered = current.stream()
+                                .anyMatch(cn -> new HostPort(cn.getHost(), cn.getHeartbeatPort()).sameNode(spec.hostPort()));
+                        if (registered) {
+                            continue;
+                        }
+                        try {
+                            systemInfo.checkSameNodeExist(spec.hostPort().host(), spec.hostPort().port());
+                            systemInfo.addComputeNode(spec.hostPort().host(), spec.hostPort().port(), spec.warehouse(),
+                                    spec.cnGroup());
+                            LOG.info("added compute node {} from the desired membership", spec);
+                        } catch (DdlException e) {
+                            LOG.warn("failed to add compute node {}: {}", spec, e.getMessage());
+                        }
+                    }
+                } finally {
+                    globalStateMgr.unlock();
                 }
             }
         }

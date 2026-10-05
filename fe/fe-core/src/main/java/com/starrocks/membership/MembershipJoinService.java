@@ -116,11 +116,19 @@ public final class MembershipJoinService {
         boolean existed = cn != null;
         if (cn == null) {
             String warehouseName = Strings.isNullOrEmpty(warehouse) ? WarehouseManager.DEFAULT_WAREHOUSE_NAME : warehouse;
+            GlobalStateMgr globalStateMgr = GlobalStateMgr.getCurrentState();
+            if (!globalStateMgr.tryLock(false)) {
+                throw new JoinException(STATUS_UNAVAILABLE, "Failed to acquire globalStateMgr lock. Try again");
+            }
             try {
-                systemInfo.checkSameNodeExist(node.host(), node.port());
-                systemInfo.addComputeNode(node.host(), node.port(), warehouseName, Strings.nullToEmpty(cnGroup));
-            } catch (DdlException e) {
-                throw new JoinException(STATUS_CONFLICT, e.getMessage());
+                try {
+                    systemInfo.checkSameNodeExist(node.host(), node.port());
+                    systemInfo.addComputeNode(node.host(), node.port(), warehouseName, Strings.nullToEmpty(cnGroup));
+                } catch (DdlException e) {
+                    throw new JoinException(STATUS_CONFLICT, e.getMessage());
+                }
+            } finally {
+                globalStateMgr.unlock();
             }
             cn = systemInfo.getComputeNodeWithHeartbeatPort(node.host(), node.port());
             if (cn == null) {
