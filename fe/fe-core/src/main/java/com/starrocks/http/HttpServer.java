@@ -78,6 +78,7 @@ import com.starrocks.http.rest.HealthAction;
 import com.starrocks.http.rest.HttpSSLContextLoader;
 import com.starrocks.http.rest.IdleAction;
 import com.starrocks.http.rest.LoadAction;
+import com.starrocks.http.rest.MembershipAction;
 import com.starrocks.http.rest.MemoryUsageAction;
 import com.starrocks.http.rest.MetaReplayerCheckAction;
 import com.starrocks.http.rest.MetricsAction;
@@ -218,6 +219,7 @@ public class HttpServer {
         // rest action
         HealthAction.registerAction(controller);
         FeatureAction.registerAction(controller);
+        MembershipAction.registerAction(controller);
         GetClusterSnapshotRestoreStateAction.registerAction(controller);
         MetricsAction.registerAction(controller);
         ShowMetaInfoAction.registerAction(controller);
