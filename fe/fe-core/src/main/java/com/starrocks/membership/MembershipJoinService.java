@@ -100,6 +100,9 @@ public final class MembershipJoinService {
         } else if (fe.getRole() != role) {
             LOG.warn("frontend {} asked to join as {} but is registered as {}, keeping {}",
                     node, role, fe.getRole(), fe.getRole());
+        } else {
+            LOG.info("frontend {} is already registered as {} ({}), it rejoins with its old name",
+                    node, fe.getRole(), fe.getNodeName());
         }
         return new FrontendJoinResult(fe.getRole(), fe.getNodeName(), HostPort.of(nodeMgr.getSelfNode()),
                 String.valueOf(nodeMgr.getClusterId()), existed);
