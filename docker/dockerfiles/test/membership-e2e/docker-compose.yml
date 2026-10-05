@@ -1,0 +1,18 @@
+# Three FEs that form one cluster through the embedded membership provider: no ALTER SYSTEM ADD and
+# no --helper. fe1 is the first seed and bootstraps, fe2 and fe3 join through the membership API.
+x-fe: &fe
+  image: ${STARROCKS_FE_IMAGE:-starrocks-fe:membership-e2e}
+  command: ["/opt/starrocks/fe/bin/start_fe.sh", "--host_type", "FQDN", "--logconsole"]
+  volumes:
+    - ./fe.conf:/opt/starrocks/fe/conf/fe.conf:ro
+
+services:
+  fe1:
+    <<: *fe
+    hostname: fe1
+  fe2:
+    <<: *fe
+    hostname: fe2
+  fe3:
+    <<: *fe
+    hostname: fe3
