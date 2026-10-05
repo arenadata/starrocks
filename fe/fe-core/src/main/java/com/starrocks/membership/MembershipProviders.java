@@ -18,6 +18,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Strings;
 import com.starrocks.common.Config;
 import com.starrocks.ha.FrontendNodeType;
+import com.starrocks.server.NodeMgr;
 import com.starrocks.service.FrontendOptions;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -46,8 +47,43 @@ public final class MembershipProviders {
 
     private static volatile MembershipProvider current;
     private static volatile MembershipContext context;
+    private static MembershipReconciler reconciler;
 
     private MembershipProviders() {
+    }
+
+    /** Announces the ready FE to the provider. A failure is logged, it never stops the FE. */
+    public static void onReady(NodeMgr nodeMgr) {
+        MembershipProvider provider = current;
+        if (provider == null) {
+            return;
+        }
+        try {
+            provider.announce(new MemberInfo(HostPort.of(nodeMgr.getSelfNode()), nodeMgr.getRole(),
+                    nodeMgr.getNodeName(), String.valueOf(nodeMgr.getClusterId())));
+        } catch (Exception e) {
+            LOG.warn("membership provider {} failed to announce this FE", provider.name(), e);
+        }
+    }
+
+    /** On the leader: records a freshly bootstrapped cluster and starts the reconciler. */
+    public static synchronized void onLeader(NodeMgr nodeMgr) {
+        MembershipProvider provider = current;
+        if (provider == null) {
+            return;
+        }
+        if (nodeMgr.isFirstTimeStartUp()) {
+            try {
+                provider.recordClusterId(String.valueOf(nodeMgr.getClusterId()));
+            } catch (Exception e) {
+                LOG.warn("membership provider {} failed to record cluster id {}", provider.name(),
+                        nodeMgr.getClusterId(), e);
+            }
+        }
+        if (reconciler == null) {
+            reconciler = MembershipReconciler.forCurrentState(provider);
+            reconciler.start();
+        }
     }
 
     public static synchronized void init(String starRocksHome) throws MembershipException {
@@ -145,6 +181,10 @@ public final class MembershipProviders {
         MembershipProvider provider = current;
         current = null;
         context = null;
+        if (reconciler != null) {
+            reconciler.setStop();
+            reconciler = null;
+        }
         if (provider != null) {
             try {
                 provider.close();

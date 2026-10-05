@@ -2247,6 +2247,36 @@ public class Config extends ConfigBase {
     public static int fe_membership_http_timeout_ms = 5000;
 
     /**
+     * Seconds between rounds of the membership reconciler on the leader.
+     */
+    @ConfField(mutable = true)
+    public static int fe_membership_reconcile_interval_seconds = 30;
+
+    /**
+     * Seconds an FE or CN absent from the desired membership must be dead before the reconciler drops it.
+     */
+    @ConfField(mutable = true)
+    public static int fe_membership_drop_grace_seconds = 600;
+
+    /**
+     * Drop FEs absent from the provider's desired membership once they are dead beyond the grace period.
+     */
+    @ConfField(mutable = true)
+    public static boolean fe_membership_auto_drop_fe = false;
+
+    /**
+     * Register CNs listed in the provider's desired membership that are missing from the cluster.
+     */
+    @ConfField(mutable = true)
+    public static boolean fe_membership_auto_add_cn = true;
+
+    /**
+     * Drop CNs absent from the provider's desired membership once they are dead beyond the grace period.
+     */
+    @ConfField(mutable = true)
+    public static boolean fe_membership_auto_drop_cn = false;
+
+    /**
      * When set to true, we cannot drop user named 'admin' or grant/revoke role to/from user named 'admin',
      * except that we're root user.
      */

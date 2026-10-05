@@ -177,6 +177,8 @@ public class StarRocksFE {
 
             FrontendOptions.saveStartType();
 
+            MembershipProviders.onReady(GlobalStateMgr.getCurrentState().getNodeMgr());
+
             CoordinatorMonitor.getInstance().start();
 
             BrpcSslContextLoader.load();
