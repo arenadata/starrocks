@@ -104,8 +104,9 @@ public class Daemon extends Thread {
                 Thread.sleep(getInterval());
             } catch (InterruptedException e) {
                 // an interrupt is a wake-up or stop signal, never a fault; e.g. the membership
-                // reconciler interrupts itself to run a round before the interval elapses
-                LOG.info("daemon thread interrupted. name: {}", getName(), e);
+                // reconciler interrupts itself to run a round before the interval elapses. The
+                // cleared flag is intentional: the next sleep must block for the full interval.
+                LOG.info("daemon thread interrupted. name: {}", getName());
             }
         }
 
