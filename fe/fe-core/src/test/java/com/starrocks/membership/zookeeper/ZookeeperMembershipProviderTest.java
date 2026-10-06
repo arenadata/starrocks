@@ -27,8 +27,6 @@ import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryOneTime;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.ZooDefs;
-import org.apache.zookeeper.server.NIOServerCnxnFactory;
-import org.apache.zookeeper.server.ZooKeeperServer;
 import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -36,11 +34,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.io.Closeable;
-import java.io.IOException;
-import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -51,43 +45,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class ZookeeperMembershipProviderTest {
 
-    /** Standalone in-process ZooKeeper: its handle allows expiring a client session on purpose. */
-    private static final class EmbeddedZooKeeper implements Closeable {
-        private final ZooKeeperServer server;
-        private final NIOServerCnxnFactory factory;
-
-        EmbeddedZooKeeper(Path dataDir) throws IOException, InterruptedException {
-            Files.createDirectories(dataDir);
-            server = new ZooKeeperServer(dataDir.toFile(), dataDir.toFile(), 2000);
-            factory = new NIOServerCnxnFactory();
-            factory.configure(new InetSocketAddress("127.0.0.1", 0), 0);
-            factory.startup(server);
-        }
-
-        String connectString() {
-            return "127.0.0.1:" + factory.getLocalPort();
-        }
-
-        void closeSession(long sessionId) {
-            server.closeSession(sessionId);
-        }
-
-        @Override
-        public void close() throws IOException {
-            factory.shutdown();
-            server.getZKDatabase().close();
-        }
-    }
-
     @TempDir
     Path tempDir;
 
-    private EmbeddedZooKeeper server;
+    private InProcessZooKeeper server;
     private final List<ZookeeperMembershipProvider> providers = new ArrayList<>();
 
     @BeforeEach
     public void startServer() throws Exception {
-        server = new EmbeddedZooKeeper(tempDir.resolve("zk"));
+        server = new InProcessZooKeeper(tempDir.resolve("zk"));
     }
 
     @AfterEach

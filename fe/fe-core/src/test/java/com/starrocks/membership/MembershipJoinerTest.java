@@ -14,6 +14,7 @@
 
 package com.starrocks.membership;
 
+import com.starrocks.common.Config;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.membership.MembershipJoiner.Decision;
 import com.starrocks.membership.MembershipJoiner.JoinOutcome;
@@ -178,15 +179,33 @@ public class MembershipJoinerTest {
 
     @Test
     public void testRejectedJoinIsFatal() {
+        Config.auth_token = "secret";
+        try {
+            FakeMembershipProvider provider = new FakeMembershipProvider();
+            provider.seeds = List.of(SEED1);
+            FakeClient client = new FakeClient();
+            client.leaders.put(SEED1, leaderInfo());
+            client.joinOutcome = JoinOutcome.failed(401, "token mismatch");
+
+            MembershipException e = Assertions.assertThrows(MembershipException.class,
+                    () -> joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+            Assertions.assertTrue(e.getMessage().contains("401 token mismatch"), e.getMessage());
+        } finally {
+            Config.auth_token = "";
+        }
+    }
+
+    @Test
+    public void testRejectedTokenlessJoinIsRetried() throws Exception {
+        // no auth_token configured: the joiner sent no token, so a rejection cannot be fixed in
+        // fe.conf — the membership proof may simply not have reached the leader yet
+        Config.auth_token = "";
         FakeMembershipProvider provider = new FakeMembershipProvider();
         provider.seeds = List.of(SEED1);
         FakeClient client = new FakeClient();
         client.leaders.put(SEED1, leaderInfo());
-        client.joinOutcome = JoinOutcome.failed(401, "token mismatch");
-
-        MembershipException e = Assertions.assertThrows(MembershipException.class,
-                () -> joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
-        Assertions.assertTrue(e.getMessage().contains("401 token mismatch"), e.getMessage());
+        client.joinOutcome = JoinOutcome.failed(401, "no token and no membership proof");
+        Assertions.assertNull(joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
     }
 
     @Test

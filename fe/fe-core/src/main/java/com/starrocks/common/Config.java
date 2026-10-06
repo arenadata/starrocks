@@ -2262,12 +2262,14 @@ public class Config extends ConfigBase {
 
     /**
      * Access control of the membership znodes: none leaves them usable by every zookeeper client,
-     * sasl restricts them to the authenticated FE principal. Requires the kerberos login of
+     * sasl restricts them to the authenticated FE principal, and no auth_token is needed at all:
+     * a live registration of the joining FE vouches for it. Requires the kerberos login of
      * kerberos_principal, and every FE of the cluster must log in as the SAME principal (no _HOST
-     * pattern). The parent chain of fe_membership_zookeeper_root must already exist and must not be
-     * open to every client: zookeeper checks deletions against the parent, so an open ancestor would
-     * leave the tree deletable anyway. Applies to newly created nodes only: set it before the first
-     * FE starts, and create operator-maintained nodes (compute_nodes) with the same ACL.
+     * pattern; sharing the principal across clusters makes them mutually trusting). The parent
+     * chain of fe_membership_zookeeper_root must already exist and must not be open to every
+     * client: zookeeper checks deletions against the parent, so an open ancestor would leave the
+     * tree deletable anyway. Applies to newly created nodes only: set it before the first FE
+     * starts, and create operator-maintained nodes (compute_nodes) with the same ACL.
      */
     @ConfField
     public static String fe_membership_zookeeper_acl = "none";

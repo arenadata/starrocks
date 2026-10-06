@@ -15,6 +15,7 @@
 package com.starrocks.membership;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Strings;
 import com.starrocks.common.Config;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.server.RunMode;
@@ -224,7 +225,18 @@ public final class MembershipJoiner implements AutoCloseable {
                         + "this FE keeps waiting with it as helper", leader.leader(), ctx.desiredRole(), ctx.self());
                 yield Decision.ofJoin(leader.leader());
             }
-            case 400, 401, 403, 409 -> throw new MembershipException("leader " + leader.leader()
+            case 401 -> {
+                if (Strings.isNullOrEmpty(Config.auth_token)) {
+                    // no token was sent, so no fe.conf value can fix this: the membership proof
+                    // may simply not have reached the leader yet
+                    LOG.warn("leader {} rejected the join without a token ({}), retrying",
+                            leader.leader(), outcome.message());
+                    yield null;
+                }
+                throw new MembershipException("leader " + leader.leader()
+                        + " rejected the join request: " + outcome.status() + " " + outcome.message());
+            }
+            case 400, 403, 409 -> throw new MembershipException("leader " + leader.leader()
                     + " rejected the join request: " + outcome.status() + " " + outcome.message());
             default -> {
                 LOG.warn("leader {} answered {} {} to the join request, retrying",

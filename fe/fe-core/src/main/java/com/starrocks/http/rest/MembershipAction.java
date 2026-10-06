@@ -48,7 +48,9 @@ import java.util.Locale;
  * Membership API used by FEs and CNs that join the cluster without ALTER SYSTEM ADD.
  * <pre>
  * GET  /api/v2/membership/leader   leader address, cluster id and run mode; no auth
- * POST /api/v2/membership/join     registers the calling node; header token = auth_token; leader only
+ * POST /api/v2/membership/join     registers the calling node; authorized by the shared token
+ *                                  (header token = auth_token) or, for frontends, by the
+ *                                  provider's membership proof; leader only
  * </pre>
  */
 public final class MembershipAction {
@@ -116,14 +118,16 @@ public final class MembershipAction {
 
     /**
      * The shared token authorizes; when it does not match, a provider that carries its own
-     * membership proof may vouch for the exact node instead. A failing vouch check is
-     * UNAVAILABLE, not UNAUTHORIZED: the caller should retry rather than give up.
+     * membership proof may vouch for the exact node instead — frontends only: compute nodes
+     * never register with the provider. A failing vouch check is UNAVAILABLE, not UNAUTHORIZED:
+     * the caller should retry rather than give up.
      */
-    static Authorization authorize(String token, String expectedToken, MembershipProvider provider, HostPort node) {
+    static Authorization authorize(String token, String expectedToken, MembershipProvider provider,
+                                    HostPort node, boolean frontend) {
         if (!Strings.isNullOrEmpty(token) && token.equals(expectedToken)) {
             return Authorization.AUTHORIZED;
         }
-        if (provider == null) {
+        if (provider == null || !frontend) {
             return Authorization.UNAUTHORIZED;
         }
         try {
@@ -198,24 +202,26 @@ public final class MembershipAction {
             }
 
             NodeMgr nodeMgr = globalStateMgr.getNodeMgr();
-            Authorization authorization = authorize(request.getRequest().headers().get(MembershipApi.TOKEN_HEADER),
-                    nodeMgr.getToken(), MembershipProviders.current().orElse(null), node);
+            String token = request.getRequest().headers().get(MembershipApi.TOKEN_HEADER);
+            String type = Strings.nullToEmpty(body.type()).trim().toUpperCase(Locale.ROOT);
+            Authorization authorization = authorize(token, nodeMgr.getToken(),
+                    MembershipProviders.current().orElse(null), node, TYPE_FRONTEND.equals(type));
             switch (authorization) {
                 case AUTHORIZED -> {
-                    // fall through to the registration below
+                    // proceed to the registration below
                 }
                 case UNAVAILABLE -> {
                     sendError(request, response, HttpResponseStatus.SERVICE_UNAVAILABLE,
                             "cannot verify membership right now");
                     return;
                 }
-                default -> {
-                    sendError(request, response, HttpResponseStatus.UNAUTHORIZED, "token mismatch");
+                case UNAUTHORIZED -> {
+                    sendError(request, response, HttpResponseStatus.UNAUTHORIZED, Strings.isNullOrEmpty(token)
+                            ? "no token and no membership proof for " + node : "token mismatch");
                 }
             }
 
             MembershipJoinService service = MembershipJoinService.forCurrentState();
-            String type = Strings.nullToEmpty(body.type()).trim().toUpperCase(Locale.ROOT);
             try {
                 switch (type) {
                     case TYPE_FRONTEND -> {

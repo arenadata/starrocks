@@ -105,15 +105,32 @@ public final class MembershipProviders {
         MembershipContext ctx = new MembershipContext(
                 new HostPort(FrontendOptions.getLocalHostAddress(), Config.edit_log_port), role, FrontendOptions.isUseFqdn());
         MembershipProvider provider = lookup(name, starRocksHome);
+        try {
+            // start first: it validates the provider's own config, so a bad provider setting is
+            // reported instead of the token requirement
+            provider.start(ctx);
+        } catch (MembershipException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new MembershipException("membership provider " + name + " failed to start: " + e.getMessage(), e);
+        }
         if (provider.requiresToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            closeQuietly(provider);
             throw new MembershipException("fe_membership_provider=" + name + " requires auth_token to be set in fe.conf");
         }
-        provider.start(ctx);
         current = provider;
         context = ctx;
         LOG.info("membership provider {} started: self {}, role {}, initial state {}{}",
                 name, ctx.self(), role, normalize(Config.fe_cluster_initial_state),
                 provider.requiresToken() ? "" : " (membership proof replaces auth_token)");
+    }
+
+    private static void closeQuietly(MembershipProvider provider) {
+        try {
+            provider.close();
+        } catch (Exception e) {
+            LOG.warn("failed to close membership provider {}", provider.name(), e);
+        }
     }
 
     private static MembershipProvider lookup(String name, String starRocksHome) throws MembershipException {

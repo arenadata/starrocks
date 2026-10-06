@@ -558,8 +558,9 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
             return false;
         }
         for (String child : childrenOf(starting())) {
+            int dash = child.lastIndexOf('-');
             try {
-                if (HostPort.parse(child.substring(0, child.lastIndexOf('-'))).sameNode(node)) {
+                if (dash > 0 && HostPort.parse(child.substring(0, dash)).sameNode(node)) {
                     return true;
                 }
             } catch (IllegalArgumentException e) {

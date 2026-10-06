@@ -30,6 +30,8 @@ import org.junit.jupiter.api.Test;
 
 public class MembershipActionTest {
 
+    private static final HostPort JOINER = new HostPort("10.0.0.7", 9010);
+
     @AfterEach
     public void tearDown() {
         MembershipProviders.setForTest(null, null);
@@ -49,21 +51,19 @@ public class MembershipActionTest {
         Assertions.assertNotNull(handler(controller, HttpMethod.POST, MembershipAction.JOIN_PATH));
     }
 
-    private static final HostPort JOINER = new HostPort("10.0.0.7", 9010);
-
     @Test
     public void testTokenMatchAuthorizesWithoutProvider() {
         Assertions.assertEquals(MembershipAction.Authorization.AUTHORIZED,
-                MembershipAction.authorize("secret", "secret", null, JOINER));
+                MembershipAction.authorize("secret", "secret", null, JOINER, true));
     }
 
     @Test
     public void testTokenMismatchWithoutVouchingIsUnauthorized() {
         FakeMembershipProvider provider = new FakeMembershipProvider();
         Assertions.assertEquals(MembershipAction.Authorization.UNAUTHORIZED,
-                MembershipAction.authorize("wrong", "secret", provider, JOINER));
+                MembershipAction.authorize("wrong", "secret", provider, JOINER, true));
         Assertions.assertEquals(MembershipAction.Authorization.UNAUTHORIZED,
-                MembershipAction.authorize(null, "secret", provider, JOINER));
+                MembershipAction.authorize(null, "secret", provider, JOINER, true));
     }
 
     @Test
@@ -75,7 +75,19 @@ public class MembershipActionTest {
             }
         };
         Assertions.assertEquals(MembershipAction.Authorization.AUTHORIZED,
-                MembershipAction.authorize(null, "secret", provider, JOINER));
+                MembershipAction.authorize(null, "secret", provider, JOINER, true));
+    }
+
+    @Test
+    public void testComputeNodesAreNeverVouched() {
+        FakeMembershipProvider provider = new FakeMembershipProvider() {
+            @Override
+            public boolean vouches(HostPort node) {
+                return JOINER.sameNode(node);
+            }
+        };
+        Assertions.assertEquals(MembershipAction.Authorization.UNAUTHORIZED,
+                MembershipAction.authorize(null, "secret", provider, JOINER, false));
     }
 
     @Test
@@ -87,7 +99,7 @@ public class MembershipActionTest {
             }
         };
         Assertions.assertEquals(MembershipAction.Authorization.UNAVAILABLE,
-                MembershipAction.authorize(null, "secret", provider, JOINER));
+                MembershipAction.authorize(null, "secret", provider, JOINER, true));
     }
 
     private static IAction handler(ActionController controller, HttpMethod method, String path) {
