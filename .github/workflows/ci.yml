@@ -88,6 +88,47 @@ jobs:
           path: '**/target/surefire-reports/'
           if-no-files-found: ignore
 
+  fe-membership-e2e:
+    name: FE membership e2e
+    needs: thirdparty
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: temurin
+          cache: maven
+          server-id: arenadata
+          server-username: GITHUB_ACTOR
+          server-password: GITHUB_TOKEN
+      - name: Restore thirdparty
+        uses: actions/cache/restore@v4
+        with:
+          path: thirdparty/installed
+          key: ${{ needs.thirdparty.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Install build dependencies
+        run: sudo apt-get update -q && sudo apt-get install -y -q ${{ env.BUILD_PACKAGES }}
+      - name: Build the FE package
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: ./build.sh --fe
+      - name: Build the FE image
+        run: ./docker/dockerfiles/test/membership-e2e/build-image.sh
+      - name: Run the membership e2e test
+        env:
+          TIMEOUT: 600
+        run: ./docker/dockerfiles/test/membership-e2e/run.sh
+      - name: Upload e2e logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fe-membership-e2e-logs
+          path: docker/dockerfiles/test/membership-e2e/logs.txt
+          if-no-files-found: ignore
+
   be-ut:
     name: BE UT (ASAN)
     needs: thirdparty

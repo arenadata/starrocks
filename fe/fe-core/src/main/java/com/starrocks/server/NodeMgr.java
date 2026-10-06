@@ -51,6 +51,10 @@ import com.starrocks.ha.HAProtocol;
 import com.starrocks.ha.LeaderInfo;
 import com.starrocks.http.meta.MetaBaseAction;
 import com.starrocks.leader.MetaHelper;
+import com.starrocks.membership.HostPort;
+import com.starrocks.membership.MembershipException;
+import com.starrocks.membership.MembershipJoiner;
+import com.starrocks.membership.MembershipProviders;
 import com.starrocks.persist.ImageWriter;
 import com.starrocks.persist.OperationType;
 import com.starrocks.persist.Storage;
@@ -263,7 +267,7 @@ public class NodeMgr {
         removeMetaFileIfExist(Storage.VERSION_FILE);
     }
 
-    public void getClusterIdAndRoleOnStartup() throws IOException {
+    public void getClusterIdAndRoleOnStartup() throws IOException, MembershipException {
         String imageDir = GlobalStateMgr.getImageDirPath();
         File roleFile = new File(imageDir, Storage.ROLE_FILE);
         File versionFile = new File(imageDir, Storage.VERSION_FILE);
@@ -285,12 +289,21 @@ public class NodeMgr {
             }
         }
 
+        if (MembershipProviders.isEnabled() && !(roleFile.exists() && versionFile.exists())) {
+            resolveHelpersThroughMembership();
+        }
+
         // if helper node is point to self, or there is ROLE and VERSION file in local.
         // get the node type from local
         if (isMyself() || (roleFile.exists() && versionFile.exists())) {
 
             if (!isMyself()) {
                 LOG.info("find ROLE and VERSION file in local, ignore helper nodes: {}", helperNodes);
+                if (helperNodes.size() > 1) {
+                    Pair<String, Integer> first = helperNodes.get(0);
+                    helperNodes.clear();
+                    helperNodes.add(first);
+                }
             }
 
             // check file integrity, if has.
@@ -511,6 +524,25 @@ public class NodeMgr {
 
         Preconditions.checkState(helperNodes.size() == 1);
         LOG.info("Got role: {}, node name: {} and run_mode: {}", role.name(), nodeName, runMode);
+    }
+
+    /**
+     * With a membership provider an FE with empty meta finds the leader itself: it registers through the
+     * membership API and continues with the leader as helper, or bootstraps when the provider allows it.
+     * The --helper addresses, if any, serve as extra seeds.
+     */
+    private void resolveHelpersThroughMembership() throws MembershipException {
+        List<HostPort> cliHelpers = helperNodes.stream()
+                .filter(helper -> !helper.equals(selfNode))
+                .map(HostPort::of)
+                .collect(Collectors.toList());
+        try (MembershipJoiner joiner = MembershipJoiner.forStartup(cliHelpers)) {
+            MembershipJoiner.Decision decision = joiner.resolve();
+            helperNodes.clear();
+            helperNodes.add(decision.bootstrap() ? selfNode : decision.helper().toPair());
+            LOG.info("membership decision: {}, helper nodes: {}",
+                    decision.bootstrap() ? "bootstrap" : "join", helperNodes);
+        }
     }
 
     // Get the role info and node name from helper node.
@@ -871,14 +903,28 @@ public class NodeMgr {
             frontendIds.remove(fe.getFid());
             removedFrontends.add(fe.getNodeName());
 
+            // Write the edit log BEFORE removing the frontend from the bdbje replication group.
+            // removeElectableNode() shuts down the feeder to the dropped follower immediately,
+            // so if the log were written after it, the dropped follower could never receive
+            // OP_REMOVE_FRONTEND_V2 and would hang in UNKNOWN state forever, instead of exiting
+            // by itself through the self-check in EditLog.loadJournal().
+            // While this record is being committed the dropped follower is still a group member,
+            // but that does not raise the quorum: either it is a normal follower (then it is either
+            // alive and can ack, or the group has already lost its quorum and every edit log write
+            // fails anyway), or it is an unstable joiner still masked by the electable group size
+            // override, which is cleared only at the end of this block.
+            GlobalStateMgr.getCurrentState().getEditLog().logRemoveFrontend(fe);
             if (fe.getRole() == FrontendNodeType.FOLLOWER) {
                 GlobalStateMgr.getCurrentState().getHaProtocol().removeElectableNode(fe.getNodeName());
                 helperNodes.remove(Pair.create(host, port));
 
+                // Clear the unstable-node bookkeeping AFTER the member is removed from the
+                // replication group. Doing it before the edit log write would clear the electable
+                // group size override while the (possibly non-acking) dropped joiner still counts
+                // toward the ack group size, making the commit above unachievable.
                 HAProtocol ha = GlobalStateMgr.getCurrentState().getHaProtocol();
                 ha.removeUnstableNode(host, getFollowerCnt());
             }
-            GlobalStateMgr.getCurrentState().getEditLog().logRemoveFrontend(fe);
         } finally {
             unlock();
 

@@ -2196,6 +2196,90 @@ public class Config extends ConfigBase {
     public static String auth_token = "";
 
     /**
+     * Membership provider that lets FEs join the cluster without ALTER SYSTEM ADD and --helper:
+     * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token to be set.
+     */
+    @ConfField
+    public static String fe_membership_provider = "none";
+
+    /**
+     * Role this FE asks for when it joins through the membership provider: FOLLOWER or OBSERVER.
+     */
+    @ConfField
+    public static String fe_membership_role = "FOLLOWER";
+
+    /**
+     * Whether an FE with empty meta may bootstrap a new cluster when it finds no leader: existing or new.
+     * With existing it waits for a leader; with new the bootstrap candidate creates the cluster.
+     * Switch to existing once the cluster is running: with new, the bootstrap candidate that lost its meta
+     * creates a second cluster instead of rejoining.
+     */
+    @ConfField
+    public static String fe_cluster_initial_state = "existing";
+
+    /**
+     * Comma separated host:edit_log_port list of FEs a fresh FE asks for the leader.
+     * The first entry is the bootstrap candidate when fe_cluster_initial_state is new, so the list must be
+     * the same, in the same order, on every FE of one cluster.
+     */
+    @ConfField
+    public static String fe_seed_nodes = "";
+
+    /**
+     * DNS name whose addresses are additional seed FEs on edit_log_port, e.g. a headless service.
+     */
+    @ConfField
+    public static String fe_membership_embedded_seed_dns = "";
+
+    /**
+     * Desired membership file of the embedded provider, read on the leader. Empty disables reconciliation.
+     */
+    @ConfField
+    public static String fe_membership_embedded_members_file = "";
+
+    /**
+     * Seconds between attempts of an FE with empty meta to find the leader through the membership provider.
+     */
+    @ConfField
+    public static int fe_membership_retry_interval_seconds = 5;
+
+    /**
+     * Timeout of one HTTP call to a seed or leader FE during membership discovery and join.
+     */
+    @ConfField
+    public static int fe_membership_http_timeout_ms = 5000;
+
+    /**
+     * Seconds between rounds of the membership reconciler on the leader.
+     */
+    @ConfField(mutable = true)
+    public static int fe_membership_reconcile_interval_seconds = 30;
+
+    /**
+     * Seconds an FE or CN absent from the desired membership must be dead before the reconciler drops it.
+     */
+    @ConfField(mutable = true)
+    public static int fe_membership_drop_grace_seconds = 600;
+
+    /**
+     * Drop FEs absent from the provider's desired membership once they are dead beyond the grace period.
+     */
+    @ConfField(mutable = true)
+    public static boolean fe_membership_auto_drop_fe = false;
+
+    /**
+     * Register CNs listed in the provider's desired membership that are missing from the cluster.
+     */
+    @ConfField(mutable = true)
+    public static boolean fe_membership_auto_add_cn = true;
+
+    /**
+     * Drop CNs absent from the provider's desired membership once they are dead beyond the grace period.
+     */
+    @ConfField(mutable = true)
+    public static boolean fe_membership_auto_drop_cn = false;
+
+    /**
      * When set to true, we cannot drop user named 'admin' or grant/revoke role to/from user named 'admin',
      * except that we're root user.
      */

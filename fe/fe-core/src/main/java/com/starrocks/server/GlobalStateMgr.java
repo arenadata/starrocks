@@ -170,6 +170,7 @@ import com.starrocks.load.routineload.RoutineLoadMgr;
 import com.starrocks.load.routineload.RoutineLoadScheduler;
 import com.starrocks.load.routineload.RoutineLoadTaskScheduler;
 import com.starrocks.load.streamload.StreamLoadMgr;
+import com.starrocks.membership.MembershipProviders;
 import com.starrocks.memory.MemoryUsageTracker;
 import com.starrocks.memory.ProcProfileCollector;
 import com.starrocks.memory.estimate.IgnoreMemoryTrack;
@@ -1424,6 +1425,7 @@ public class GlobalStateMgr {
         // heartbeat mgr
         heartbeatMgr.setLeader(nodeMgr.getClusterId(), nodeMgr.getToken(), getEpoch());
         heartbeatMgr.start();
+        MembershipProviders.onLeader(nodeMgr);
         // New load scheduler
         pendingLoadTaskScheduler.start();
         loadingLoadTaskScheduler.start();

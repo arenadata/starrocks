@@ -53,6 +53,7 @@ import com.starrocks.journal.bdbje.BDBTool;
 import com.starrocks.journal.bdbje.BDBToolOptions;
 import com.starrocks.lake.snapshot.RestoreClusterSnapshotMgr;
 import com.starrocks.leader.MetaHelper;
+import com.starrocks.membership.MembershipProviders;
 import com.starrocks.qe.ConnectScheduler;
 import com.starrocks.qe.CoordinatorMonitor;
 import com.starrocks.qe.QeService;
@@ -147,6 +148,8 @@ public class StarRocksFE {
             FrontendOptions.init(cmdLineOpts.getHostType());
             ExecuteEnv.setup();
 
+            MembershipProviders.init(starRocksDir);
+
             // init globalStateMgr
             GlobalStateMgr.getCurrentState().initialize(cmdLineOpts.getHelpers());
 
@@ -173,6 +176,8 @@ public class StarRocksFE {
             GlobalStateMgr.getCurrentState().waitForReady();
 
             FrontendOptions.saveStartType();
+
+            MembershipProviders.onReady(GlobalStateMgr.getCurrentState().getNodeMgr());
 
             CoordinatorMonitor.getInstance().start();
 

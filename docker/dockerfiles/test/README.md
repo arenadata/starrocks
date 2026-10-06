@@ -24,3 +24,19 @@ What they cover:
   and the root filesystem may be read-only, so the configuration directory is used as it is found.
 
 `stubs/` holds the fake commands, `lib/test_helpers.sh` the assertions and the fixture.
+
+# Membership end-to-end test
+
+`membership-e2e/` starts three FEs with docker compose and checks that they form one cluster through
+the embedded membership provider (`fe_membership_provider = embedded` in `membership-e2e/fe.conf`):
+no `ALTER SYSTEM ADD`, no `--helper`. It then restarts one FE and recreates another with empty meta,
+and expects both to be alive members again.
+
+```bash
+./build.sh --fe
+./docker/dockerfiles/test/membership-e2e/build-image.sh
+./docker/dockerfiles/test/membership-e2e/run.sh
+```
+
+`STARROCKS_FE_IMAGE` selects another image, `TIMEOUT` (seconds, default 300) bounds every wait,
+`KEEP=1` leaves the containers running. Container logs end up in `membership-e2e/logs.txt`.
