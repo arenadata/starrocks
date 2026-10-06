@@ -46,10 +46,10 @@ under the License.
         <jackson.version>2.21.1</jackson.version>
         <!-- jackson-annotations doesn't have 2.21.1 version released -->
         <jackson-annotations.version>2.21</jackson-annotations.version>
-        <spark.version>3.5.4.4-4.3.0-1</spark.version>
+        <spark.version>3.5.4.5-4.4.0-1</spark.version>
         <tomcat.version>8.5.70</tomcat.version>
         <parquet.version>1.17.0</parquet.version>
-        <hadoop.version>3.4.3.1-4.3.0-1</hadoop.version>
+        <hadoop.version>3.4.3.2-4.4.0-1</hadoop.version>
         <ozone.version>2.1.0.1-4.3.0-1</ozone.version>
         <byte-buddy.version>1.17.6</byte-buddy.version>
         <gcs.connector.version>3.0.13</gcs.connector.version>
@@ -81,7 +81,7 @@ under the License.
         <staros.version>4.0.4</staros.version>
         <!-- hadoop-azure requires no more than jetty10+ -->
         <!-- https://stackoverflow.com/questions/66713254/spark-wasb-and-jetty-11 -->
-        <jetty.version>9.4.58.v20250814</jetty.version>
+        <jetty.version>9.4.58.1</jetty.version>
         <byteman.version>4.0.24</byteman.version>
         <!-- azure native sdk -->
         <azure.version>1.2.34</azure.version>
