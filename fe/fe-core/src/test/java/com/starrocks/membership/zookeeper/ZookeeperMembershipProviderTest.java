@@ -26,6 +26,7 @@ import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryOneTime;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
 import org.apache.zookeeper.server.NIOServerCnxnFactory;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.awaitility.Awaitility;
@@ -312,6 +313,8 @@ public class ZookeeperMembershipProviderTest {
 
     @Test
     public void testCreatorAclProtectsTheMembershipNodes() throws Exception {
+        protectNamespace("/starrocks4");
+        Config.fe_membership_zookeeper_root = "/starrocks4/fe-membership";
         Config.fe_membership_zookeeper_acl = "sasl";
         ZookeeperMembershipProvider first = started("10.0.0.1", "digest", "fe:secret");
         ZookeeperMembershipProvider second = started("10.0.0.2", "digest", "fe:secret");
@@ -331,6 +334,8 @@ public class ZookeeperMembershipProviderTest {
                     () -> ops.setData().forPath(root + "/cluster_id", "evil".getBytes(StandardCharsets.UTF_8)));
             Assertions.assertThrows(KeeperException.NoAuthException.class,
                     () -> ops.delete().forPath(root + "/frontends/10.0.0.1:9010"));
+            Assertions.assertThrows(KeeperException.NoAuthException.class,
+                    () -> ops.create().forPath(root + "/frontends/evil:9010"));
         }
     }
 
@@ -342,5 +347,103 @@ public class ZookeeperMembershipProviderTest {
         MembershipException e = Assertions.assertThrows(MembershipException.class, () -> provider.start(
                 new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false)));
         Assertions.assertTrue(e.getMessage().contains("fe_membership_zookeeper_acl"));
+    }
+
+    @Test
+    public void testWorldWritableAncestorFailsFast() throws Exception {
+        Config.fe_membership_zookeeper_acl = "sasl";
+        Config.fe_membership_zookeeper_servers = server.connectString();
+        ZookeeperMembershipProvider provider = new ZookeeperMembershipProvider();
+        provider.setSessionAuthForTest("digest", "fe:secret");
+        MembershipException e = Assertions.assertThrows(MembershipException.class, () -> provider.start(
+                new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false)));
+        Assertions.assertTrue(e.getMessage().contains("ancestor"), e.getMessage());
+
+        protectNamespace("/protected");
+        Config.fe_membership_zookeeper_root = "/protected/fe-membership";
+        ZookeeperMembershipProvider second = new ZookeeperMembershipProvider();
+        second.setSessionAuthForTest("digest", "fe:secret");
+        second.start(new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false));
+        providers.add(second);
+        Assertions.assertTrue(second.isBootstrapCandidate());
+    }
+
+    @Test
+    public void testUnauthenticatedSessionGetsTheAclHint() throws Exception {
+        protectNamespace("/protected2");
+        Config.fe_membership_zookeeper_root = "/protected2/fe-membership";
+        Config.fe_membership_zookeeper_acl = "sasl";
+        Config.fe_membership_zookeeper_servers = server.connectString();
+
+        ZookeeperMembershipProvider provider = new ZookeeperMembershipProvider();
+        MembershipException e = Assertions.assertThrows(MembershipException.class, () -> provider.start(
+                new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false)));
+        Assertions.assertTrue(e.getMessage().contains("authenticated"), e.getMessage());
+    }
+
+    @Test
+    public void testSecondPrincipalGetsTheAclHint() throws Exception {
+        protectNamespace("/starrocks2");
+        Config.fe_membership_zookeeper_root = "/starrocks2/fe-membership";
+        Config.fe_membership_zookeeper_acl = "sasl";
+        Config.fe_membership_zookeeper_servers = server.connectString();
+
+        ZookeeperMembershipProvider first = new ZookeeperMembershipProvider();
+        first.setSessionAuthForTest("digest", "fe:secret");
+        first.start(new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false));
+        providers.add(first);
+
+        ZookeeperMembershipProvider second = new ZookeeperMembershipProvider();
+        second.setSessionAuthForTest("digest", "someone-else:other");
+        MembershipException e = Assertions.assertThrows(MembershipException.class, () -> second.start(
+                new MembershipContext(new HostPort("10.0.0.2", 9010), FrontendNodeType.FOLLOWER, false)));
+        Assertions.assertTrue(e.getMessage().contains("principal"), e.getMessage());
+    }
+
+    @Test
+    public void testPreexistingOpenTreeIsRejectedUnderSasl() throws Exception {
+        protectNamespace("/starrocks3");
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.getZookeeperClient().getZooKeeper()
+                    .addAuthInfo("digest", "fe:secret".getBytes(StandardCharsets.UTF_8));
+            ops.create().forPath("/starrocks3/fe-membership");
+        }
+        Config.fe_membership_zookeeper_root = "/starrocks3/fe-membership";
+        Config.fe_membership_zookeeper_acl = "sasl";
+        Config.fe_membership_zookeeper_servers = server.connectString();
+        ZookeeperMembershipProvider provider = new ZookeeperMembershipProvider();
+        provider.setSessionAuthForTest("digest", "fe:secret");
+        MembershipException e = Assertions.assertThrows(MembershipException.class, () -> provider.start(
+                new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false)));
+        Assertions.assertTrue(e.getMessage().contains("/starrocks3/fe-membership"), e.getMessage());
+    }
+
+    @Test
+    public void testDeletedTreeSelfHealsOnNextCall() throws Exception {
+        ZookeeperMembershipProvider first = started("10.0.0.1");
+        ZookeeperMembershipProvider second = started("10.0.0.2");
+
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.delete().deletingChildrenIfNeeded().forPath(Config.fe_membership_zookeeper_root);
+        }
+
+        Assertions.assertTrue(first.isBootstrapCandidate());
+        Assertions.assertTrue(second.seeds().isEmpty());
+    }
+
+    /** Locks "/" and creates the parent with the creator ACL, as an ensemble admin would. */
+    private void protectNamespace(String parent) throws Exception {
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.getZookeeperClient().getZooKeeper()
+                    .addAuthInfo("digest", "fe:secret".getBytes(StandardCharsets.UTF_8));
+            ops.setACL().withACL(ZooDefs.Ids.CREATOR_ALL_ACL).forPath("/");
+            ops.create().withACL(ZooDefs.Ids.CREATOR_ALL_ACL).forPath(parent);
+        }
     }
 }

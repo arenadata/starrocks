@@ -88,6 +88,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     private long ensureIntervalMs = ENSURE_INTERVAL_MS;
     private ScheduledExecutorService ensureScheduler;
     private List<ACL> aclList = ZooDefs.Ids.OPEN_ACL_UNSAFE;
+    private boolean creatorAcl;
     private String[] sessionAuthForTest;
 
     @Override
@@ -112,9 +113,17 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                     "fe_membership_zookeeper_root must be an absolute znode path, got '" + this.root + "'");
         }
         this.aclList = parseAcl(Config.fe_membership_zookeeper_acl);
-        client = CuratorFrameworkFactory.newClient(servers,
-                Config.fe_membership_zookeeper_session_timeout_ms, CONNECTION_TIMEOUT_MS,
-                new ExponentialBackoffRetry(1000, 8));
+        this.creatorAcl = this.aclList == ZooDefs.Ids.CREATOR_ALL_ACL;
+        CuratorFrameworkFactory.Builder builder = CuratorFrameworkFactory.builder()
+                .connectString(servers)
+                .sessionTimeoutMs(Config.fe_membership_zookeeper_session_timeout_ms)
+                .connectionTimeoutMs(CONNECTION_TIMEOUT_MS)
+                .retryPolicy(new ExponentialBackoffRetry(1000, 8));
+        if (sessionAuthForTest != null) {
+            builder.authorization(sessionAuthForTest[0],
+                    sessionAuthForTest[1].getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        client = builder.build();
         if (KerberosLoginManager.isLoggedIn()) {
             ZooKeeperSasl.installClientEntry(Config.kerberos_principal, Config.kerberos_keytab);
         }
@@ -129,13 +138,8 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                 throw new MembershipException(
                         "cannot connect to zookeeper " + servers + " within " + CONNECT_WAIT_SECONDS + " s");
             }
-            if (sessionAuthForTest != null) {
-                call(() -> {
-                    client.getZookeeperClient().getZooKeeper()
-                            .addAuthInfo(sessionAuthForTest[0], sessionAuthForTest[1]
-                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                    return null;
-                });
+            if (creatorAcl) {
+                verifyAncestorsProtected();
             }
             ensureRoot();
             ensureBranch(starting());
@@ -170,29 +174,74 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     }
 
     /**
-     * An auth failure while the creator ACL is on almost always means the session did not
-     * authenticate to the ensemble (no kerberos login), a case worth naming to the operator.
+     * An ACL failure while the creator ACL is on means the session is not authenticated, or is
+     * authenticated as a different principal than the one that owns the membership tree.
      */
     private MembershipException withAclHint(MembershipException failure) {
-        if (aclList != ZooDefs.Ids.CREATOR_ALL_ACL
-                || !(failure.getCause() instanceof KeeperException keeper)
-                || (keeper.code() != KeeperException.Code.AUTHFAILED
-                && keeper.code() != KeeperException.Code.NOAUTH)) {
+        if (!creatorAcl || !(failure.getCause() instanceof KeeperException keeper)) {
             return failure;
         }
-        return new MembershipException(failure.getMessage()
-                + " (fe_membership_zookeeper_acl=sasl needs an authenticated zookeeper session)", failure);
+        return switch (keeper.code()) {
+            case INVALIDACL, NOAUTH, AUTHFAILED -> new MembershipException(failure.getMessage()
+                    + " (fe_membership_zookeeper_acl=sasl needs a zookeeper session authenticated as the"
+                    + " principal that owns the membership tree)", failure);
+            default -> failure;
+        };
     }
 
     /**
-     * Creates the root with the configured ACL: creatingParentsIfNeeded() would leave it
-     * world-writable, and the ACL of an existing node cannot be tightened afterwards.
+     * Replaces ensureRoot and ensureBranch: under the creator ACL the parent chain of the root must
+     * already exist and must not be world-writable. ZooKeeper checks DELETE against the parent, so an
+     * open ancestor would leave the whole membership tree deletable by any client.
+     */
+    private void verifyAncestorsProtected() throws MembershipException {
+        String path = root.substring(0, root.lastIndexOf('/'));
+        if (path.isEmpty()) {
+            path = "/";
+        }
+        while (true) {
+            try {
+                for (ACL acl : client.getACL().forPath(path)) {
+                    if ("world".equals(acl.getId().getScheme())) {
+                        throw new MembershipException("zookeeper membership: ancestor " + path + " of " + root
+                                + " is open to every client: protect the parent chain of"
+                                + " fe_membership_zookeeper_root before enabling fe_membership_zookeeper_acl=sasl");
+                    }
+                }
+            } catch (KeeperException.NoNodeException e) {
+                throw new MembershipException("zookeeper membership: ancestor " + path + " of " + root
+                        + " does not exist: pre-create the parent chain of fe_membership_zookeeper_root"
+                        + " with the FE principal before enabling fe_membership_zookeeper_acl=sasl");
+            } catch (KeeperException.NoAuthException e) {
+                // an ancestor this session cannot even read is protected, which is what we need
+            } catch (MembershipException e) {
+                throw e;
+            } catch (Exception e) {
+                throw new MembershipException("cannot inspect the ACL of " + path + ": " + e.getMessage(), e);
+            }
+            if (path.equals("/")) {
+                return;
+            }
+            path = path.substring(0, path.lastIndexOf('/'));
+            if (path.isEmpty()) {
+                path = "/";
+            }
+        }
+    }
+
+    /**
+     * Creates the root with the configured ACL. creatingParentsIfNeeded() would create missing
+     * parents open, so under the creator ACL the chain is verified to exist and to be protected first.
      */
     private void ensureRoot() throws MembershipException {
         try {
-            client.create().creatingParentsIfNeeded().withACL(aclList).forPath(root);
+            if (creatorAcl) {
+                client.create().withACL(aclList).forPath(root);
+            } else {
+                client.create().creatingParentsIfNeeded().withACL(aclList).forPath(root);
+            }
         } catch (KeeperException.NodeExistsException e) {
-            // kept from an earlier start, with whatever ACL it was created with
+            verifyProtected(root);
         } catch (Exception e) {
             throw new MembershipException("cannot create " + root + ": " + e.getMessage(), e);
         }
@@ -203,9 +252,31 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
         try {
             client.create().withACL(aclList).forPath(path);
         } catch (KeeperException.NodeExistsException e) {
-            // exists, with whatever ACL it was created with
+            verifyProtected(path);
         } catch (Exception e) {
             throw new MembershipException("cannot create " + path + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** Rejects a node that already exists with an open ACL instead of protecting it halfway. */
+    private void verifyProtected(String path) throws MembershipException {
+        if (!creatorAcl) {
+            return;
+        }
+        try {
+            for (ACL acl : client.getACL().forPath(path)) {
+                if ("world".equals(acl.getId().getScheme())) {
+                    throw new MembershipException("zookeeper membership: " + path
+                            + " exists with an ACL open to every client: recreate it as the FE principal"
+                            + " or keep fe_membership_zookeeper_acl=none");
+                }
+            }
+        } catch (KeeperException.NoAuthException e) {
+            // owned by another principal: the following create fails with the acl hint
+        } catch (MembershipException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new MembershipException("cannot inspect the ACL of " + path + ": " + e.getMessage(), e);
         }
     }
 
@@ -256,6 +327,8 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     /** Recreates our own ephemerals when they are gone, e.g. after a lost session. */
     private synchronized void ensureRegistered() throws MembershipException {
         if (startingNode == null || !exists(starting() + "/" + startingNode)) {
+            ensureRoot();
+            ensureBranch(starting());
             registerStarting();
         }
         MemberInfo self = announced;
@@ -371,19 +444,27 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
 
     @Override
     public void recordClusterId(String clusterId) throws MembershipException {
-        try {
-            client.create().withACL(aclList)
-                    .forPath(clusterId(), clusterId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
-            LOG.info("zookeeper membership: recorded cluster id {} in {}", clusterId, clusterId());
-        } catch (KeeperException.NodeExistsException e) {
-            String recorded = readClusterId();
-            if (!clusterId.equals(recorded)) {
-                throw new MembershipException("cluster " + recorded + " is already recorded in " + clusterId()
-                        + ", refusing to record " + clusterId + ": check fe_membership_zookeeper_root");
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                client.create().withACL(aclList)
+                        .forPath(clusterId(), clusterId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                LOG.info("zookeeper membership: recorded cluster id {} in {}", clusterId, clusterId());
+                return;
+            } catch (KeeperException.NodeExistsException e) {
+                String recorded = readClusterId();
+                if (!clusterId.equals(recorded)) {
+                    throw new MembershipException("cluster " + recorded + " is already recorded in " + clusterId()
+                            + ", refusing to record " + clusterId + ": check fe_membership_zookeeper_root");
+                }
+                return;
+            } catch (KeeperException.NoNodeException e) {
+                // the tree was deleted under us: recreate the root and retry once
+                ensureRoot();
+            } catch (Exception e) {
+                throw new MembershipException("cannot record cluster id in " + clusterId() + ": " + e.getMessage(), e);
             }
-        } catch (Exception e) {
-            throw new MembershipException("cannot record cluster id in " + clusterId() + ": " + e.getMessage(), e);
         }
+        throw new MembershipException("cannot record cluster id in " + clusterId() + ": the root keeps disappearing");
     }
 
     private String readClusterId() throws MembershipException {
