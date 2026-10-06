@@ -218,6 +218,13 @@ under the License.
             <artifactId>jprotobuf-starrocks</artifactId>
         </dependency>
 
+        <!-- must precede the jprotobuf-starrocks fat jar below: it bundles commons-io 2.7, whose
+             classes would otherwise win class loading and break hadoop's configuration2 -->
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.velocity</groupId>
             <artifactId>velocity-engine-core</artifactId>
@@ -239,11 +246,6 @@ under the License.
         <dependency>
             <groupId>com.baidu</groupId>
             <artifactId>jprotobuf-rpc-common</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>commons-io</groupId>
-            <artifactId>commons-io</artifactId>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.baidu/jprotobuf-rpc-core -->
