@@ -229,6 +229,37 @@ public class MembershipJoinerTest {
     }
 
     @Test
+    public void testEmptyProviderTokenJoinsWithoutTheHeader() throws Exception {
+        // an empty record is no token: nothing is sent and a rejection stays retryable
+        Config.auth_token = "";
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.seeds = List.of(SEED1);
+        provider.providesToken = true;
+        provider.tokenToRead = "";
+        FakeClient client = new FakeClient();
+        client.leaders.put(SEED1, leaderInfo());
+        client.joinOutcome = joined(LEADER);
+
+        Assertions.assertEquals(Decision.ofJoin(LEADER),
+                joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+        Assertions.assertEquals(java.util.Arrays.asList((String) null), client.joinTokens);
+    }
+
+    @Test
+    public void testRejectedJoinIsRetriedUntilTheProviderHasARecord() throws Exception {
+        // the provider serves tokens but has none yet: the tokenless rejection is retried
+        Config.auth_token = "";
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.seeds = List.of(SEED1);
+        provider.providesToken = true;
+        provider.tokenToRead = null;
+        FakeClient client = new FakeClient();
+        client.leaders.put(SEED1, leaderInfo());
+        client.joinOutcome = JoinOutcome.failed(401, "no token and no membership proof");
+        Assertions.assertNull(joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+    }
+
+    @Test
     public void testRejectedProviderTokenIsFatal() {
         // the token was read from the provider and still rejected: nothing in fe.conf can fix
         // this, the record in the provider backend is wrong

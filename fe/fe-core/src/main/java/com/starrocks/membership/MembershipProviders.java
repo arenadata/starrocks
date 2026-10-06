@@ -129,9 +129,14 @@ public final class MembershipProviders {
         }
         current = provider;
         context = ctx;
-        String tokenNote = provider.requiresToken()
-                ? (provider.providesToken() ? " (join token is served by the provider)" : "")
-                : " (membership proof replaces auth_token)";
+        String tokenNote;
+        if (!provider.requiresToken()) {
+            tokenNote = " (membership proof replaces auth_token)";
+        } else if (provider.providesToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            tokenNote = " (join token is served by the provider)";
+        } else {
+            tokenNote = "";
+        }
         LOG.info("membership provider {} started: self {}, role {}, initial state {}{}",
                 name, ctx.self(), role, normalize(Config.fe_cluster_initial_state), tokenNote);
     }

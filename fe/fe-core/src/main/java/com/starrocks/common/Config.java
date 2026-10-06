@@ -2200,7 +2200,9 @@ public class Config extends ConfigBase {
      * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token,
      * except a provider that serves the join token itself or carries its own membership proof
      * (zookeeper serves the token through its backend, and with fe_membership_zookeeper_acl=sasl
-     * the live registration in the provider is the proof).
+     * the live registration in the provider is the proof). An explicitly set auth_token is never
+     * published to the provider; removing it from fe.conf requires every FE to run code that
+     * serves the token, so change it as a full upgrade, not per node.
      */
     @ConfField
     public static String fe_membership_provider = "none";

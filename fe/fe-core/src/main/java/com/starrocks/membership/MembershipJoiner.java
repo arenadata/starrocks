@@ -251,8 +251,9 @@ public final class MembershipJoiner implements AutoCloseable {
 
     /**
      * Token for the join request: the fe.conf value when set, otherwise the token the provider
-     * serves, e.g. from its backend. A provider read failure is not fatal — the tokenless join
-     * is retried and the next round re-reads.
+     * serves, e.g. from its backend. Empty normalizes to null: nothing is sent, a 401 is then
+     * retried rather than fatal. A provider read failure is not fatal either — the tokenless
+     * join is retried and the next round re-reads.
      */
     private String effectiveToken() {
         if (!Strings.isNullOrEmpty(Config.auth_token)) {
@@ -262,7 +263,7 @@ public final class MembershipJoiner implements AutoCloseable {
             return null;
         }
         try {
-            return provider.readToken();
+            return Strings.emptyToNull(provider.readToken());
         } catch (MembershipException e) {
             LOG.warn("provider {} cannot read the join token yet: {}", provider.name(), e.getMessage());
             return null;

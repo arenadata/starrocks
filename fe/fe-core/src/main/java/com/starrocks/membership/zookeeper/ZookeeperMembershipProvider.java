@@ -339,6 +339,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
         if (self != null && !exists(frontends() + "/" + self.hostPort())) {
             announceSelf();
         }
+        ensureToken();
     }
 
     private boolean exists(String path) throws MembershipException {
@@ -561,13 +562,10 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
      * With an open ACL there is no membership proof, so the join token is shared through the
      * {@code token} znode and fe.conf carries no secret. Under the creator ACL the live
      * registration in starting/ already proves membership and no secret is needed at all.
-     * Answers before start(), so MembershipProviders can drop the token requirement: reads the
-     * config directly instead of the field start() fills in.
      */
     @Override
     public boolean providesToken() {
-        return !"sasl".equals(Strings.nullToEmpty(Config.fe_membership_zookeeper_acl).trim()
-                .toLowerCase(Locale.ROOT));
+        return requiresToken();
     }
 
     @Override
@@ -580,7 +578,13 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                 LOG.info("zookeeper membership: published the cluster token in {}", tokenPath());
                 return;
             } catch (KeeperException.NodeExistsException e) {
-                // the record exists: keep it, it belongs to the surviving cluster
+                // the record exists and is never overwritten; a disagreement with this FE's
+                // token means a poisoned record or two clusters sharing one root
+                String recorded = readToken();
+                if (recorded != null && !recorded.equals(token)) {
+                    LOG.warn("zookeeper membership: token record in {} differs from this cluster's"
+                            + " token, keeping the record", tokenPath());
+                }
                 return;
             } catch (KeeperException.NoNodeException e) {
                 // the tree was deleted under us: recreate the root and retry once
