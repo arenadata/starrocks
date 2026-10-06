@@ -82,6 +82,27 @@ public interface MembershipProvider extends AutoCloseable {
         return false;
     }
 
+    /**
+     * True when the provider can serve the join token itself, so fe.conf does not need auth_token.
+     * Only consulted when {@link #requiresToken()} is true.
+     */
+    default boolean providesToken() {
+        return false;
+    }
+
+    /**
+     * Publishes the cluster join token so any FE can send it without a copy in fe.conf. Called by
+     * every ready FE; the implementation must keep the existing record and must not overwrite it
+     * with a token a freshly wiped FE carries.
+     */
+    default void publishToken(String token) throws MembershipException {
+    }
+
+    /** The join token this provider serves, or null when it is not published yet. */
+    default String readToken() throws MembershipException {
+        return null;
+    }
+
     @Override
     default void close() {
     }

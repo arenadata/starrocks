@@ -76,23 +76,19 @@ public class HttpLeaderClientTest {
         HttpLeaderClient client = new HttpLeaderClient();
         Assertions.assertThrows(IOException.class, () -> client.join(
                 new HostPort("127.0.0.1", Config.http_port), new HostPort("127.0.0.1", 9010),
-                FrontendNodeType.FOLLOWER));
+                FrontendNodeType.FOLLOWER, null));
     }
 
     @Test
-    public void testJoinSendsTheTokenHeaderOnlyWhenConfigured() throws Exception {
+    public void testJoinSendsTheTokenOnlyWhenResolved() throws Exception {
         String answer = "{\"role\": \"FOLLOWER\", \"node_name\": \"x\", \"helper\": \"127.0.0.1:9010\"}";
         startServer("{}", answer);
+        HttpLeaderClient client = new HttpLeaderClient();
+        HostPort leader = new HostPort("127.0.0.1", Config.http_port);
+        HostPort self = new HostPort("127.0.0.1", 9010);
 
-        Config.auth_token = "secret";
-        try {
-            new HttpLeaderClient().join(new HostPort("127.0.0.1", Config.http_port),
-                    new HostPort("127.0.0.1", 9010), FrontendNodeType.FOLLOWER);
-        } finally {
-            Config.auth_token = "";
-        }
-        new HttpLeaderClient().join(new HostPort("127.0.0.1", Config.http_port),
-                new HostPort("127.0.0.1", 9010), FrontendNodeType.FOLLOWER);
+        client.join(leader, self, FrontendNodeType.FOLLOWER, "secret");
+        client.join(leader, self, FrontendNodeType.FOLLOWER, null);
 
         Assertions.assertEquals(java.util.Arrays.asList("secret", null), joinTokenHeaders);
     }

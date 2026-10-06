@@ -29,9 +29,12 @@ public class FakeMembershipProvider implements MembershipProvider {
     public boolean candidate = false;
     public Optional<Set<FrontendSpec>> expectedFrontends = Optional.empty();
     public Optional<Set<ComputeNodeSpec>> expectedComputeNodes = Optional.empty();
+    public boolean providesToken = false;
+    public String tokenToRead = null;
 
     public final List<String> recordedClusterIds = new ArrayList<>();
     public final List<MemberInfo> announced = new ArrayList<>();
+    public final List<String> publishedTokens = new ArrayList<>();
 
     @Override
     public String name() {
@@ -79,5 +82,20 @@ public class FakeMembershipProvider implements MembershipProvider {
     @Override
     public Optional<Set<ComputeNodeSpec>> expectedComputeNodes() {
         return expectedComputeNodes;
+    }
+
+    @Override
+    public boolean providesToken() {
+        return providesToken;
+    }
+
+    @Override
+    public void publishToken(String token) {
+        publishedTokens.add(token);
+    }
+
+    @Override
+    public String readToken() {
+        return tokenToRead;
     }
 }

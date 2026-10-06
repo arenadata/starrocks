@@ -64,6 +64,15 @@ public final class MembershipProviders {
         } catch (Exception e) {
             LOG.warn("membership provider {} failed to announce this FE", provider.name(), e);
         }
+        // with an open provider backend the cluster token is shared through the provider instead
+        // of fe.conf; every ready FE publishes the same persisted value, the first record wins
+        if (provider.providesToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            try {
+                provider.publishToken(nodeMgr.getToken());
+            } catch (Exception e) {
+                LOG.warn("membership provider {} failed to publish the join token", provider.name(), e);
+            }
+        }
     }
 
     /** On the leader: records a freshly bootstrapped cluster and starts the reconciler. */
@@ -114,15 +123,17 @@ public final class MembershipProviders {
         } catch (Exception e) {
             throw new MembershipException("membership provider " + name + " failed to start: " + e.getMessage(), e);
         }
-        if (provider.requiresToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+        if (provider.requiresToken() && !provider.providesToken() && Strings.isNullOrEmpty(Config.auth_token)) {
             closeQuietly(provider);
             throw new MembershipException("fe_membership_provider=" + name + " requires auth_token to be set in fe.conf");
         }
         current = provider;
         context = ctx;
+        String tokenNote = provider.requiresToken()
+                ? (provider.providesToken() ? " (join token is served by the provider)" : "")
+                : " (membership proof replaces auth_token)";
         LOG.info("membership provider {} started: self {}, role {}, initial state {}{}",
-                name, ctx.self(), role, normalize(Config.fe_cluster_initial_state),
-                provider.requiresToken() ? "" : " (membership proof replaces auth_token)");
+                name, ctx.self(), role, normalize(Config.fe_cluster_initial_state), tokenNote);
     }
 
     private static void closeQuietly(MembershipProvider provider) {

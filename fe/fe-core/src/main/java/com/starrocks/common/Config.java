@@ -2198,8 +2198,9 @@ public class Config extends ConfigBase {
     /**
      * Membership provider that lets FEs join the cluster without ALTER SYSTEM ADD and --helper:
      * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token,
-     * except a provider that carries its own membership proof (zookeeper with
-     * fe_membership_zookeeper_acl=sasl).
+     * except a provider that serves the join token itself or carries its own membership proof
+     * (zookeeper serves the token through its backend, and with fe_membership_zookeeper_acl=sasl
+     * the live registration in the provider is the proof).
      */
     @ConfField
     public static String fe_membership_provider = "none";
@@ -2262,8 +2263,9 @@ public class Config extends ConfigBase {
 
     /**
      * Access control of the membership znodes: none leaves them usable by every zookeeper client,
-     * sasl restricts them to the authenticated FE principal, and no auth_token is needed at all:
-     * a live registration of the joining FE vouches for it. Requires the kerberos login of
+     * and the join token is then shared through the token znode instead of fe.conf. sasl restricts
+     * the znodes to the authenticated FE principal, and no auth_token is needed at all: a live
+     * registration of the joining FE vouches for it. Requires the kerberos login of
      * kerberos_principal, and every FE of the cluster must log in as the SAME principal (no _HOST
      * pattern; sharing the principal across clusters makes them mutually trusting). The parent
      * chain of fe_membership_zookeeper_root must already exist and must not be open to every

@@ -68,7 +68,9 @@ public final class MembershipJoiner implements AutoCloseable {
         /** Empty when the seed answers but has no leader. IOException when it does not answer. */
         Optional<LeaderInfo> leader(HostPort seed) throws IOException;
 
-        JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role) throws IOException;
+        /** The token is what the joiner resolved for this request; null sends no token header. */
+        JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role, String token)
+                throws IOException;
     }
 
     public interface Sleeper {
@@ -207,9 +209,10 @@ public final class MembershipJoiner implements AutoCloseable {
                     + " differs from the configured " + RunMode.name());
         }
         HostPort leaderHttp = new HostPort(leader.leader().host(), leader.leaderHttpPort());
+        String token = effectiveToken();
         JoinOutcome outcome;
         try {
-            outcome = client.join(leaderHttp, ctx.self(), ctx.desiredRole());
+            outcome = client.join(leaderHttp, ctx.self(), ctx.desiredRole(), token);
         } catch (IOException e) {
             LOG.warn("join request to leader {} failed: {}", leaderHttp, e.getMessage());
             return null;
@@ -226,10 +229,10 @@ public final class MembershipJoiner implements AutoCloseable {
                 yield Decision.ofJoin(leader.leader());
             }
             case 401 -> {
-                if (Strings.isNullOrEmpty(Config.auth_token)) {
-                    // no token was sent, so no fe.conf value can fix this: the membership proof
-                    // may simply not have reached the leader yet
-                    LOG.warn("leader {} rejected the join without a token ({}), retrying",
+                if (token == null) {
+                    // nothing was sent, so no fe.conf value can fix this: the token record or the
+                    // membership proof may simply not have reached the leader yet
+                    LOG.warn("leader {} rejected the tokenless join ({}), retrying",
                             leader.leader(), outcome.message());
                     yield null;
                 }
@@ -244,5 +247,25 @@ public final class MembershipJoiner implements AutoCloseable {
                 yield null;
             }
         };
+    }
+
+    /**
+     * Token for the join request: the fe.conf value when set, otherwise the token the provider
+     * serves, e.g. from its backend. A provider read failure is not fatal — the tokenless join
+     * is retried and the next round re-reads.
+     */
+    private String effectiveToken() {
+        if (!Strings.isNullOrEmpty(Config.auth_token)) {
+            return Config.auth_token;
+        }
+        if (!provider.providesToken()) {
+            return null;
+        }
+        try {
+            return provider.readToken();
+        } catch (MembershipException e) {
+            LOG.warn("provider {} cannot read the join token yet: {}", provider.name(), e.getMessage());
+            return null;
+        }
     }
 }

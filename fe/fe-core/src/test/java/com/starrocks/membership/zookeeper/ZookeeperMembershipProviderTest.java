@@ -108,6 +108,44 @@ public class ZookeeperMembershipProviderTest {
     }
 
     @Test
+    public void testPublishedTokenIsReadableByEveryFe() throws Exception {
+        ZookeeperMembershipProvider first = started("10.0.0.1");
+        Assertions.assertNull(first.readToken());
+
+        first.publishToken("cluster-secret");
+
+        ZookeeperMembershipProvider second = started("10.0.0.2");
+        Assertions.assertEquals("cluster-secret", second.readToken());
+    }
+
+    @Test
+    public void testPublishTokenKeepsTheRecordedValue() throws Exception {
+        ZookeeperMembershipProvider first = started("10.0.0.1");
+        first.publishToken("cluster-secret");
+
+        // a wiped FE rejoining carries a fresh token and must not overwrite the record
+        first.publishToken("another-token");
+
+        Assertions.assertEquals("cluster-secret", first.readToken());
+    }
+
+    @Test
+    public void testDeletedTokenRecordSelfHeals() throws Exception {
+        ZookeeperMembershipProvider first = started("10.0.0.1");
+        first.publishToken("cluster-secret");
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.delete().forPath(Config.fe_membership_zookeeper_root + "/token");
+            Assertions.assertNull(first.readToken());
+        }
+
+        first.seeds();
+
+        Assertions.assertEquals("cluster-secret", first.readToken());
+    }
+
+    @Test
     public void testAnnouncedFrontendIsSeedAndDesired() throws Exception {
         ZookeeperMembershipProvider first = started("10.0.0.1");
         ZookeeperMembershipProvider second = started("10.0.0.2");

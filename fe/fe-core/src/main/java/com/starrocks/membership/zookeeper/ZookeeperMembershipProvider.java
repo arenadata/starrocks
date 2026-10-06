@@ -58,6 +58,8 @@ import java.util.concurrent.TimeUnit;
  *   starting/&lt;host:port&gt;-&lt;seq&gt;     ephemeral, one per starting FE
  *   frontends/&lt;host:port&gt;          ephemeral, written by a ready FE in announce
  *   compute_nodes/&lt;host:port&gt;      persistent, the desired CN set an operator maintains
+ *   token                          persistent, the join token shared through zookeeper when
+ *                                  the ACL is open and fe.conf carries no secret
  * </pre>
  * The FE that registered under {@code starting} first holds the smallest sequence number and is the
  * bootstrap candidate, so a cold start elects exactly one candidate without a configured node order.
@@ -73,6 +75,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     private static final String FRONTENDS = "frontends";
     private static final String COMPUTE_NODES = "compute_nodes";
     private static final String CLUSTER_ID = "cluster_id";
+    private static final String TOKEN = "token";
 
     private static final int CONNECTION_TIMEOUT_MS = 10_000;
     private static final int CONNECT_WAIT_SECONDS = 30;
@@ -83,6 +86,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     private CuratorFramework client;
     private volatile String startingNode;
     private volatile MemberInfo announced;
+    private volatile String tokenValue;
     private volatile Runnable onChange;
     private CuratorCache watcher;
     private long ensureIntervalMs = ENSURE_INTERVAL_MS;
@@ -353,6 +357,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     @Override
     public List<HostPort> seeds() throws MembershipException {
         ensureRegistered();
+        ensureToken();
         List<HostPort> seeds = new ArrayList<>();
         for (String child : childrenOf(frontends())) {
             try {
@@ -424,6 +429,10 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
 
     private String clusterId() {
         return root + "/" + CLUSTER_ID;
+    }
+
+    private String tokenPath() {
+        return root + "/" + TOKEN;
     }
 
     /** Runs a Curator call and turns its failures into MembershipException. */
@@ -549,6 +558,63 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     }
 
     /**
+     * With an open ACL there is no membership proof, so the join token is shared through the
+     * {@code token} znode and fe.conf carries no secret. Under the creator ACL the live
+     * registration in starting/ already proves membership and no secret is needed at all.
+     * Answers before start(), so MembershipProviders can drop the token requirement: reads the
+     * config directly instead of the field start() fills in.
+     */
+    @Override
+    public boolean providesToken() {
+        return !"sasl".equals(Strings.nullToEmpty(Config.fe_membership_zookeeper_acl).trim()
+                .toLowerCase(Locale.ROOT));
+    }
+
+    @Override
+    public void publishToken(String token) throws MembershipException {
+        tokenValue = token;
+        for (int attempt = 0; attempt < 2; attempt++) {
+            try {
+                client.create().withACL(aclList)
+                        .forPath(tokenPath(), token.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                LOG.info("zookeeper membership: published the cluster token in {}", tokenPath());
+                return;
+            } catch (KeeperException.NodeExistsException e) {
+                // the record exists: keep it, it belongs to the surviving cluster
+                return;
+            } catch (KeeperException.NoNodeException e) {
+                // the tree was deleted under us: recreate the root and retry once
+                ensureRoot();
+            } catch (Exception e) {
+                throw new MembershipException(
+                        "cannot publish the cluster token in " + tokenPath() + ": " + e.getMessage(), e);
+            }
+        }
+        throw new MembershipException(
+                "cannot publish the cluster token in " + tokenPath() + ": the root keeps disappearing");
+    }
+
+    @Override
+    public String readToken() throws MembershipException {
+        try {
+            return new String(client.getData().forPath(tokenPath()), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (KeeperException.NoNodeException e) {
+            return null;
+        } catch (Exception e) {
+            throw new MembershipException("cannot read " + tokenPath() + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** Re-publishes our token record when the znode is gone; a no-op when we published none. */
+    private void ensureToken() throws MembershipException {
+        String token = tokenValue;
+        if (token == null || exists(tokenPath())) {
+            return;
+        }
+        publishToken(token);
+    }
+
+    /**
      * Under the creator ACL only a session of the FE principal can hold a registration under
      * starting/, so a live node there is proof that the address belongs to this cluster.
      */
@@ -587,6 +653,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     @Override
     public Optional<Set<ComputeNodeSpec>> expectedComputeNodes() throws MembershipException {
         ensureRegistered();
+        ensureToken();
         List<String> children;
         try {
             children = client.getChildren().forPath(computeNodes());
