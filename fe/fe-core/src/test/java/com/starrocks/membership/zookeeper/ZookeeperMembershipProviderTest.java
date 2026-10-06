@@ -25,6 +25,7 @@ import com.starrocks.membership.MembershipException;
 import org.apache.curator.framework.CuratorFramework;
 import org.apache.curator.framework.CuratorFrameworkFactory;
 import org.apache.curator.retry.RetryOneTime;
+import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.server.NIOServerCnxnFactory;
 import org.apache.zookeeper.server.ZooKeeperServer;
 import org.awaitility.Awaitility;
@@ -98,11 +99,19 @@ public class ZookeeperMembershipProviderTest {
         Config.fe_membership_zookeeper_servers = "";
         Config.fe_membership_zookeeper_root = "/starrocks/fe-membership";
         Config.fe_membership_zookeeper_session_timeout_ms = 30000;
+        Config.fe_membership_zookeeper_acl = "none";
     }
 
     private ZookeeperMembershipProvider started(String host) throws Exception {
+        return started(host, null, null);
+    }
+
+    private ZookeeperMembershipProvider started(String host, String authScheme, String auth) throws Exception {
         Config.fe_membership_zookeeper_servers = server.connectString();
         ZookeeperMembershipProvider provider = new ZookeeperMembershipProvider();
+        if (authScheme != null) {
+            provider.setSessionAuthForTest(authScheme, auth);
+        }
         provider.start(new MembershipContext(new HostPort(host, 9010), FrontendNodeType.FOLLOWER, false));
         providers.add(provider);
         return provider;
@@ -299,5 +308,39 @@ public class ZookeeperMembershipProviderTest {
                     Config.fe_membership_zookeeper_root + "/compute_nodes/10.0.0.1:9050", new byte[0]);
         }
         Awaitility.await().atMost(15, TimeUnit.SECONDS).until(() -> fired.get() > 0);
+    }
+
+    @Test
+    public void testCreatorAclProtectsTheMembershipNodes() throws Exception {
+        Config.fe_membership_zookeeper_acl = "sasl";
+        ZookeeperMembershipProvider first = started("10.0.0.1", "digest", "fe:secret");
+        ZookeeperMembershipProvider second = started("10.0.0.2", "digest", "fe:secret");
+        first.announce(new MemberInfo(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, "fe1", "9"));
+        first.recordClusterId("9");
+
+        Assertions.assertEquals(List.of(new HostPort("10.0.0.1", 9010)), second.seeds());
+        Assertions.assertEquals(Optional.of("9"), second.existingClusterId());
+
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            String root = Config.fe_membership_zookeeper_root;
+            Assertions.assertThrows(KeeperException.NoAuthException.class,
+                    () -> ops.getChildren().forPath(root));
+            Assertions.assertThrows(KeeperException.NoAuthException.class,
+                    () -> ops.setData().forPath(root + "/cluster_id", "evil".getBytes(StandardCharsets.UTF_8)));
+            Assertions.assertThrows(KeeperException.NoAuthException.class,
+                    () -> ops.delete().forPath(root + "/frontends/10.0.0.1:9010"));
+        }
+    }
+
+    @Test
+    public void testAclValueIsValidated() throws Exception {
+        Config.fe_membership_zookeeper_servers = server.connectString();
+        Config.fe_membership_zookeeper_acl = "md5";
+        ZookeeperMembershipProvider provider = new ZookeeperMembershipProvider();
+        MembershipException e = Assertions.assertThrows(MembershipException.class, () -> provider.start(
+                new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false)));
+        Assertions.assertTrue(e.getMessage().contains("fe_membership_zookeeper_acl"));
     }
 }

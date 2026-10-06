@@ -37,11 +37,14 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.ZooDefs;
+import org.apache.zookeeper.data.ACL;
 
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
@@ -84,6 +87,8 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     private CuratorCache watcher;
     private long ensureIntervalMs = ENSURE_INTERVAL_MS;
     private ScheduledExecutorService ensureScheduler;
+    private List<ACL> aclList = ZooDefs.Ids.OPEN_ACL_UNSAFE;
+    private String[] sessionAuthForTest;
 
     @Override
     public String name() {
@@ -106,6 +111,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
             throw new MembershipException(
                     "fe_membership_zookeeper_root must be an absolute znode path, got '" + this.root + "'");
         }
+        this.aclList = parseAcl(Config.fe_membership_zookeeper_acl);
         client = CuratorFrameworkFactory.newClient(servers,
                 Config.fe_membership_zookeeper_session_timeout_ms, CONNECTION_TIMEOUT_MS,
                 new ExponentialBackoffRetry(1000, 8));
@@ -123,13 +129,24 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                 throw new MembershipException(
                         "cannot connect to zookeeper " + servers + " within " + CONNECT_WAIT_SECONDS + " s");
             }
+            if (sessionAuthForTest != null) {
+                call(() -> {
+                    client.getZookeeperClient().getZooKeeper()
+                            .addAuthInfo(sessionAuthForTest[0], sessionAuthForTest[1]
+                                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    return null;
+                });
+            }
+            ensureRoot();
+            ensureBranch(starting());
             registerStarting();
         } catch (Exception e) {
             client.close();
             if (e instanceof MembershipException failure) {
-                throw failure;
+                throw withAclHint(failure);
             }
-            throw new MembershipException("zookeeper membership provider failed to start: " + e.getMessage(), e);
+            throw withAclHint(new MembershipException(
+                    "zookeeper membership provider failed to start: " + e.getMessage(), e));
         }
         ensureScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "zookeeper-membership-ensure");
@@ -142,13 +159,68 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                 ctx.self(), root, servers, negotiatedSessionTimeoutMs());
     }
 
+    private static List<ACL> parseAcl(String value) throws MembershipException {
+        String acl = Strings.nullToEmpty(value).trim().toLowerCase(Locale.ROOT);
+        return switch (acl) {
+            case "", "none" -> ZooDefs.Ids.OPEN_ACL_UNSAFE;
+            case "sasl" -> ZooDefs.Ids.CREATOR_ALL_ACL;
+            default -> throw new MembershipException(
+                    "fe_membership_zookeeper_acl must be none or sasl, got '" + value + "'");
+        };
+    }
+
+    /**
+     * An auth failure while the creator ACL is on almost always means the session did not
+     * authenticate to the ensemble (no kerberos login), a case worth naming to the operator.
+     */
+    private MembershipException withAclHint(MembershipException failure) {
+        if (aclList != ZooDefs.Ids.CREATOR_ALL_ACL
+                || !(failure.getCause() instanceof KeeperException keeper)
+                || (keeper.code() != KeeperException.Code.AUTHFAILED
+                && keeper.code() != KeeperException.Code.NOAUTH)) {
+            return failure;
+        }
+        return new MembershipException(failure.getMessage()
+                + " (fe_membership_zookeeper_acl=sasl needs an authenticated zookeeper session)", failure);
+    }
+
+    /**
+     * Creates the root with the configured ACL: creatingParentsIfNeeded() would leave it
+     * world-writable, and the ACL of an existing node cannot be tightened afterwards.
+     */
+    private void ensureRoot() throws MembershipException {
+        try {
+            client.create().creatingParentsIfNeeded().withACL(aclList).forPath(root);
+        } catch (KeeperException.NodeExistsException e) {
+            // kept from an earlier start, with whatever ACL it was created with
+        } catch (Exception e) {
+            throw new MembershipException("cannot create " + root + ": " + e.getMessage(), e);
+        }
+    }
+
+    /** Creates a branch of the membership tree with the configured ACL when it does not exist yet. */
+    private void ensureBranch(String path) throws MembershipException {
+        try {
+            client.create().withACL(aclList).forPath(path);
+        } catch (KeeperException.NodeExistsException e) {
+            // exists, with whatever ACL it was created with
+        } catch (Exception e) {
+            throw new MembershipException("cannot create " + path + ": " + e.getMessage(), e);
+        }
+    }
+
     /** (Re-)creates the ephemeral registration; a re-registration after a lost session gets a new seq. */
     private synchronized void registerStarting() throws MembershipException {
         String path = call(() -> client.create()
-                .creatingParentsIfNeeded()
                 .withMode(CreateMode.EPHEMERAL_SEQUENTIAL)
+                .withACL(aclList)
                 .forPath(starting() + "/" + ctx.self() + "-"));
         startingNode = path.substring(path.lastIndexOf('/') + 1);
+    }
+
+    @VisibleForTesting
+    void setSessionAuthForTest(String scheme, String auth) {
+        this.sessionAuthForTest = new String[] {scheme, auth};
     }
 
     private void reRegisterAfterSessionLoss() {
@@ -300,7 +372,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     @Override
     public void recordClusterId(String clusterId) throws MembershipException {
         try {
-            client.create().creatingParentsIfNeeded()
+            client.create().withACL(aclList)
                     .forPath(clusterId(), clusterId.getBytes(java.nio.charset.StandardCharsets.UTF_8));
             LOG.info("zookeeper membership: recorded cluster id {} in {}", clusterId, clusterId());
         } catch (KeeperException.NodeExistsException e) {
@@ -342,8 +414,9 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
         } catch (Exception e) {
             throw new MembershipException("cannot replace " + path + ": " + e.getMessage(), e);
         }
+        ensureBranch(frontends());
         try {
-            client.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL)
+            client.create().withMode(CreateMode.EPHEMERAL).withACL(aclList)
                     .forPath(path, JSON.writeValueAsBytes(
                             new FrontendPayload(self.role().name(), self.nodeName(), self.clusterId())));
             LOG.info("zookeeper membership: announced {} in {}", self, path);

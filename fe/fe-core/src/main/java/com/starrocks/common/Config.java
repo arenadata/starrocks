@@ -2259,6 +2259,15 @@ public class Config extends ConfigBase {
     public static int fe_membership_zookeeper_session_timeout_ms = 30000;
 
     /**
+     * Access control of the membership znodes: none leaves them usable by every zookeeper client,
+     * sasl restricts them to the authenticated FE principal (requires the kerberos login of
+     * kerberos_principal). Applies to newly created nodes only: set it before the first FE starts, and
+     * create operator-maintained nodes (compute_nodes) with the same ACL.
+     */
+    @ConfField
+    public static String fe_membership_zookeeper_acl = "none";
+
+    /**
      * Seconds between attempts of an FE with empty meta to find the leader through the membership provider.
      */
     @ConfField
