@@ -227,4 +227,77 @@ public class ZookeeperMembershipProviderTest {
 
         Awaitility.await().atMost(15, TimeUnit.SECONDS).until(() -> fired.get() >= 1);
     }
+
+    @Test
+    public void testSeedsSortAnnouncedFrontendsAndSkipInvalidChildren() throws Exception {
+        ZookeeperMembershipProvider first = started("10.0.0.1");
+        ZookeeperMembershipProvider second = started("10.0.0.2");
+        first.announce(new MemberInfo(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, "fe1", "4242"));
+        second.announce(new MemberInfo(new HostPort("10.0.0.2", 9010), FrontendNodeType.OBSERVER, "fe2", "4242"));
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.create().forPath(Config.fe_membership_zookeeper_root + "/frontends/garbage-child", new byte[0]);
+        }
+
+        Assertions.assertEquals(List.of(new HostPort("10.0.0.1", 9010), new HostPort("10.0.0.2", 9010)),
+                second.seeds());
+    }
+
+    @Test
+    public void testRegistrationSelfHealsWithoutProviderCalls() throws Exception {
+        Config.fe_membership_zookeeper_servers = server.connectString();
+        ZookeeperMembershipProvider first = new ZookeeperMembershipProvider();
+        first.setEnsureIntervalForTest(500);
+        first.start(new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false));
+        providers.add(first);
+        ZookeeperMembershipProvider second = started("10.0.0.2");
+        first.announce(new MemberInfo(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, "fe1", "4242"));
+
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.delete().forPath(Config.fe_membership_zookeeper_root + "/frontends/10.0.0.1:9010");
+        }
+
+        HostPort announcedFe = new HostPort("10.0.0.1", 9010);
+        Awaitility.await().atMost(15, TimeUnit.SECONDS).untilAsserted(
+                () -> Assertions.assertEquals(List.of(announcedFe), second.seeds()));
+    }
+
+    @Test
+    public void testRootTrailingSlashIsTrimmed() throws Exception {
+        Config.fe_membership_zookeeper_root = "/starrocks/fe-membership/";
+        ZookeeperMembershipProvider provider = started("10.0.0.1");
+
+        Assertions.assertTrue(provider.isBootstrapCandidate());
+        provider.recordClusterId("7");
+        Assertions.assertEquals(Optional.of("7"), provider.existingClusterId());
+    }
+
+    @Test
+    public void testStartingChurnDoesNotFireTheChangeListener() throws Exception {
+        ZookeeperMembershipProvider leader = started("10.0.0.1");
+        AtomicInteger fired = new AtomicInteger();
+        leader.addChangeListener(fired::incrementAndGet);
+
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            String churn = Config.fe_membership_zookeeper_root + "/starting/churn-0000000099";
+            ops.create().forPath(churn, new byte[0]);
+            ops.delete().forPath(churn);
+        }
+
+        Thread.sleep(2000);
+        Assertions.assertEquals(0, fired.get());
+
+        try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),
+                new RetryOneTime(1000))) {
+            ops.start();
+            ops.create().creatingParentsIfNeeded().forPath(
+                    Config.fe_membership_zookeeper_root + "/compute_nodes/10.0.0.1:9050", new byte[0]);
+        }
+        Awaitility.await().atMost(15, TimeUnit.SECONDS).until(() -> fired.get() > 0);
+    }
 }

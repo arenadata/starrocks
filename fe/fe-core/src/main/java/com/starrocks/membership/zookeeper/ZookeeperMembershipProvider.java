@@ -38,10 +38,14 @@ import org.apache.logging.log4j.Logger;
 import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -69,6 +73,7 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
 
     private static final int CONNECTION_TIMEOUT_MS = 10_000;
     private static final int CONNECT_WAIT_SECONDS = 30;
+    private static final long ENSURE_INTERVAL_MS = 30_000;
 
     private MembershipContext ctx;
     private String root;
@@ -77,6 +82,8 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     private volatile MemberInfo announced;
     private volatile Runnable onChange;
     private CuratorCache watcher;
+    private long ensureIntervalMs = ENSURE_INTERVAL_MS;
+    private ScheduledExecutorService ensureScheduler;
 
     @Override
     public String name() {
@@ -92,6 +99,9 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                     "fe_membership_provider=zookeeper requires fe_membership_zookeeper_servers to be set");
         }
         this.root = Strings.nullToEmpty(Config.fe_membership_zookeeper_root).trim();
+        while (this.root.endsWith("/")) {
+            this.root = this.root.substring(0, this.root.length() - 1);
+        }
         if (!this.root.startsWith("/")) {
             throw new MembershipException(
                     "fe_membership_zookeeper_root must be an absolute znode path, got '" + this.root + "'");
@@ -114,13 +124,22 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
                         "cannot connect to zookeeper " + servers + " within " + CONNECT_WAIT_SECONDS + " s");
             }
             registerStarting();
-        } catch (MembershipException e) {
-            throw e;
         } catch (Exception e) {
             client.close();
+            if (e instanceof MembershipException failure) {
+                throw failure;
+            }
             throw new MembershipException("zookeeper membership provider failed to start: " + e.getMessage(), e);
         }
-        LOG.info("zookeeper membership: self {} registered under {} on {}", ctx.self(), root, servers);
+        ensureScheduler = Executors.newSingleThreadScheduledExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "zookeeper-membership-ensure");
+            thread.setDaemon(true);
+            return thread;
+        });
+        ensureScheduler.scheduleWithFixedDelay(this::ensureRegisteredQuietly,
+                ensureIntervalMs, ensureIntervalMs, TimeUnit.MILLISECONDS);
+        LOG.info("zookeeper membership: self {} registered under {} on {} (session timeout {} ms)",
+                ctx.self(), root, servers, negotiatedSessionTimeoutMs());
     }
 
     /** (Re-)creates the ephemeral registration; a re-registration after a lost session gets a new seq. */
@@ -134,10 +153,31 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
 
     private void reRegisterAfterSessionLoss() {
         try {
-            startingNode = null;
             ensureRegistered();
         } catch (MembershipException e) {
             LOG.warn("zookeeper membership: failed to re-register after reconnect: {}", e.getMessage());
+        }
+    }
+
+    /** Periodic self-heal: recreates the own ephemerals without any provider call from the outside. */
+    private void ensureRegisteredQuietly() {
+        try {
+            ensureRegistered();
+        } catch (Exception e) {
+            LOG.warn("zookeeper membership: periodic re-registration failed: {}", e.getMessage());
+        }
+    }
+
+    @VisibleForTesting
+    void setEnsureIntervalForTest(long ensureIntervalMs) {
+        this.ensureIntervalMs = ensureIntervalMs;
+    }
+
+    private int negotiatedSessionTimeoutMs() {
+        try {
+            return client.getZookeeperClient().getZooKeeper().getSessionTimeout();
+        } catch (Exception e) {
+            return Config.fe_membership_zookeeper_session_timeout_ms;
         }
     }
 
@@ -168,7 +208,16 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
     @Override
     public List<HostPort> seeds() throws MembershipException {
         ensureRegistered();
-        return childrenOf(frontends()).stream().map(HostPort::parse).sorted().toList();
+        List<HostPort> seeds = new ArrayList<>();
+        for (String child : childrenOf(frontends())) {
+            try {
+                seeds.add(HostPort.parse(child));
+            } catch (IllegalArgumentException e) {
+                LOG.warn("zookeeper membership: skipping announced frontend with unreadable name '{}'", child);
+            }
+        }
+        seeds.sort(Comparator.comparing(HostPort::host).thenComparing(HostPort::port));
+        return seeds;
     }
 
     /** Children of a branch; a branch that does not exist yet is empty. */
@@ -428,6 +477,10 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
 
     @Override
     public synchronized void close() {
+        if (ensureScheduler != null) {
+            ensureScheduler.shutdownNow();
+            ensureScheduler = null;
+        }
         if (watcher != null) {
             watcher.close();
             watcher = null;
