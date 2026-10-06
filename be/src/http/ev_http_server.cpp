@@ -40,6 +40,11 @@
 #include <event2/http.h>
 #include <event2/http_struct.h>
 #include <event2/keyvalq_struct.h>
+#ifdef STARROCKS_HAVE_EVHTTP_SSL
+#include <event2/bufferevent_ssl.h>
+#include <openssl/err.h>
+#include <openssl/ssl.h>
+#endif
 
 #include <memory>
 #include <sstream>
@@ -90,25 +95,110 @@ static int on_connection(struct evhttp_request* req, void* param) {
     return 0;
 }
 
-EvHttpServer::EvHttpServer(int port, int num_workers) : _port(port), _num_workers(num_workers), _real_port(0) {
+#ifdef STARROCKS_HAVE_EVHTTP_SSL
+static std::string ssl_error_string() {
+    std::string msg;
+    unsigned long err;
+    while ((err = ERR_get_error()) != 0) {
+        char buf[256];
+        ERR_error_string_n(err, buf, sizeof(buf));
+        if (!msg.empty()) {
+            msg += "; ";
+        }
+        msg += buf;
+    }
+    return msg.empty() ? "unknown error" : msg;
+}
+
+// param is the server's SSL_CTX. Called by evhttp for every accepted connection;
+// evhttp sets the socket fd on the returned bufferevent.
+static struct bufferevent* on_ssl_bev(struct event_base* base, void* param) {
+    auto* ctx = (SSL_CTX*)param;
+    SSL* ssl = SSL_new(ctx);
+    if (ssl == nullptr) {
+        // Returning nullptr would make evhttp fall back to a plaintext bufferevent.
+        // Abort instead of silently serving plaintext on an HTTPS-only port.
+        LOG(FATAL) << "SSL_new failed: " << ssl_error_string();
+    }
+    struct bufferevent* bev =
+            bufferevent_openssl_socket_new(base, -1, ssl, BUFFEREVENT_SSL_ACCEPTING, BEV_OPT_CLOSE_ON_FREE);
+    if (bev == nullptr) {
+        LOG(FATAL) << "bufferevent_openssl_socket_new failed";
+    }
+    // Scrapers often close without a TLS close_notify; do not treat that as an error.
+    bufferevent_openssl_set_allow_dirty_shutdown(bev, 1);
+    return bev;
+}
+#endif
+
+EvHttpServer::EvHttpServer(int port, int num_workers, std::optional<EvHttpServerSslConfig> ssl_config)
+        : _port(port), _num_workers(num_workers), _real_port(0), _ssl_config(std::move(ssl_config)) {
     _host = BackendOptions::get_service_bind_address();
     DCHECK_GT(_num_workers, 0);
     auto res = pthread_rwlock_init(&_rw_lock, nullptr);
     DCHECK_EQ(res, 0);
 }
 
-EvHttpServer::EvHttpServer(std::string host, int port, int num_workers)
-        : _host(std::move(host)), _port(port), _num_workers(num_workers), _real_port(0) {
+EvHttpServer::EvHttpServer(std::string host, int port, int num_workers, std::optional<EvHttpServerSslConfig> ssl_config)
+        : _host(std::move(host)),
+          _port(port),
+          _num_workers(num_workers),
+          _real_port(0),
+          _ssl_config(std::move(ssl_config)) {
     DCHECK_GT(_num_workers, 0);
     auto res = pthread_rwlock_init(&_rw_lock, nullptr);
     DCHECK_EQ(res, 0);
 }
 
 EvHttpServer::~EvHttpServer() {
+#ifdef STARROCKS_HAVE_EVHTTP_SSL
+    // Normally freed in join(); this covers a server that failed to start or was never joined.
+    if (_ssl_ctx != nullptr) {
+        SSL_CTX_free(_ssl_ctx);
+        _ssl_ctx = nullptr;
+    }
+#endif
     pthread_rwlock_destroy(&_rw_lock);
 }
 
+Status EvHttpServer::_init_ssl_ctx() {
+    if (!_ssl_config.has_value()) {
+        return Status::OK();
+    }
+#ifdef STARROCKS_HAVE_EVHTTP_SSL
+    const auto& cfg = _ssl_config.value();
+    if (cfg.cert_path.empty() || cfg.key_path.empty()) {
+        return Status::InvalidArgument("HTTPS requires both a certificate path and a private key path");
+    }
+    ERR_clear_error();
+    SSL_CTX* ctx = SSL_CTX_new(TLS_server_method());
+    if (ctx == nullptr) {
+        return Status::InternalError("SSL_CTX_new failed: " + ssl_error_string());
+    }
+    std::string err;
+    if (SSL_CTX_set_min_proto_version(ctx, TLS1_2_VERSION) != 1) {
+        err = "failed to set minimum TLS version: ";
+    } else if (SSL_CTX_use_certificate_chain_file(ctx, cfg.cert_path.c_str()) != 1) {
+        err = "failed to load certificate " + cfg.cert_path + ": ";
+    } else if (SSL_CTX_use_PrivateKey_file(ctx, cfg.key_path.c_str(), SSL_FILETYPE_PEM) != 1) {
+        err = "failed to load private key " + cfg.key_path + ": ";
+    } else if (SSL_CTX_check_private_key(ctx) != 1) {
+        err = "private key does not match certificate: ";
+    }
+    if (!err.empty()) {
+        err += ssl_error_string();
+        SSL_CTX_free(ctx);
+        return Status::InternalError(err);
+    }
+    _ssl_ctx = ctx;
+    return Status::OK();
+#else
+    return Status::NotSupported("HTTPS is not available: StarRocks was built without libevent OpenSSL support");
+#endif
+}
+
 Status EvHttpServer::start() {
+    RETURN_IF_ERROR(_init_ssl_ctx());
     // bind to
     RETURN_IF_ERROR(_bind());
     for (int i = 0; i < _num_workers; ++i) {
@@ -140,6 +230,11 @@ Status EvHttpServer::start() {
                 return;
             }
 
+#ifdef STARROCKS_HAVE_EVHTTP_SSL
+            if (_ssl_ctx != nullptr) {
+                evhttp_set_bevcb(http, on_ssl_bev, _ssl_ctx);
+            }
+#endif
             evhttp_set_newreqcb(http, on_connection, this);
             evhttp_set_gencb(http, on_request, this);
 
@@ -179,6 +274,14 @@ void EvHttpServer::join() {
     for (auto base : _event_bases) {
         event_base_free(base);
     }
+
+#ifdef STARROCKS_HAVE_EVHTTP_SSL
+    // Free after all connections (and their SSL objects) are gone.
+    if (_ssl_ctx != nullptr) {
+        SSL_CTX_free(_ssl_ctx);
+        _ssl_ctx = nullptr;
+    }
+#endif
 }
 
 Status EvHttpServer::_bind() {

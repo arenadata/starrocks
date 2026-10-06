@@ -195,6 +195,24 @@ This topic introduces the following types of FE configurations:
 - Description: The BE HTTP server port.
 - Introduced in: -
 
+### be_metrics_enable_https
+
+- Default: false
+- Type: Boolean
+- Unit: -
+- Is mutable: No
+- Description: When this item is set to `true`, the dedicated metrics server on `be_metrics_port` serves HTTPS only, using the certificate and private key specified by `ssl_certificate_path` and `ssl_private_key_path`. TLS 1.2 or later is required, and client certificates are not verified. If the certificate or key is missing, unreadable, or mismatched, the BE or CN fails to start rather than falling back to plain HTTP. This item does not depend on `enable_https`, which controls TLS for the bRPC server only. It has no effect when `be_metrics_port` is `0`.
+- Introduced in: -
+
+### be_metrics_port
+
+- Default: 0
+- Type: Int
+- Unit: -
+- Is mutable: No
+- Description: The port of a dedicated HTTP server for metrics scraping. `0` disables it. This server only serves `/metrics`, `/metrics/memory`, and `/api/health`. Admin, profiling, and data endpoints stay on `be_http_port`. Set `be_metrics_enable_https` to `true` to serve HTTPS on this port, so that Prometheus can scrape metrics over TLS while `be_http_port` keeps serving plain HTTP for internal traffic such as tablet clone and Stream Load. `/metrics` on `be_http_port` remains plaintext. Restrict access to `be_http_port` if metrics must stay confidential. Example Prometheus Operator `PodMonitor` endpoint: `port: metrics`, `scheme: https`, `tlsConfig: {ca: ...}`.
+- Introduced in: -
+
 ### be_port
 
 - Default: 9060
@@ -466,7 +484,7 @@ This topic introduces the following types of FE configurations:
 - Type: String
 - Unit: -
 - Is mutable: No
-- Description: File system path to the TLS/SSL private key (PEM) that the BE's brpc server uses as the private key for the default certificate. When `enable_https` is set to `true`, the system sets `brpc::ServerOptions::ssl_options().default_cert.private_key` to this path at process start. The file must be accessible by the BE process and must match the certificate provided by `ssl_certificate_path`. If this value is not set or the file is missing or unaccessible, HTTPS will not be configured and the bRPC server may fail to start. Protect this file with restrictive filesystem permissions (for example, 600).
+- Description: File system path to the TLS/SSL private key (PEM) that the BE's brpc server uses as the private key for the default certificate. When `enable_https` is set to `true`, the system sets `brpc::ServerOptions::ssl_options().default_cert.private_key` to this path at process start. The file must be accessible by the BE process and must match the certificate provided by `ssl_certificate_path`. If this value is not set or the file is missing or unaccessible, HTTPS will not be configured and the bRPC server may fail to start. Protect this file with restrictive filesystem permissions (for example, 600). This file is also used by the dedicated metrics server when `be_metrics_enable_https` is `true`.
 - Introduced in: v4.0.0
 
 ### thrift_client_retry_interval_ms
@@ -565,7 +583,7 @@ This topic introduces the following types of FE configurations:
 - Type: String
 - Unit: -
 - Is mutable: No
-- Description: Absolute path to the TLS/SSL certificate file (PEM) that the BE's brpc server will use when enable_https is true. At BE startup this value is copied into `brpc::ServerOptions::ssl_options().default_cert.certificate`; you must also set `ssl_private_key_path` to the matching private key. Provide the server certificate and any intermediate certificates in PEM format (certificate chain) if required by your CA. The file must be readable by the StarRocks BE process and is applied only at startup. If unset or invalid while enable_https is enabled, brpc TLS setup may fail and prevent the server from starting correctly.
+- Description: Absolute path to the TLS/SSL certificate file (PEM) that the BE's brpc server will use when enable_https is true. At BE startup this value is copied into `brpc::ServerOptions::ssl_options().default_cert.certificate`; you must also set `ssl_private_key_path` to the matching private key. Provide the server certificate and any intermediate certificates in PEM format (certificate chain) if required by your CA. The file must be readable by the StarRocks BE process and is applied only at startup. If unset or invalid while enable_https is enabled, brpc TLS setup may fail and prevent the server from starting correctly. This file is also used by the dedicated metrics server when `be_metrics_enable_https` is `true`.
 - Introduced in: v4.0.0
 
 ## Metadata and cluster management

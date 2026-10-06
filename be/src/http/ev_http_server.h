@@ -19,6 +19,7 @@
 
 #include <event2/event.h>
 
+#include <optional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -27,15 +28,25 @@
 #include "http/http_method.h"
 #include "util/path_trie.hpp"
 
+typedef struct ssl_ctx_st SSL_CTX;
+
 namespace starrocks {
 
 class HttpHandler;
 class HttpRequest;
 
+// TLS settings for an EvHttpServer. When set, the server accepts HTTPS only.
+struct EvHttpServerSslConfig {
+    // PEM certificate (chain) and the matching private key.
+    std::string cert_path;
+    std::string key_path;
+};
+
 class EvHttpServer {
 public:
-    EvHttpServer(int port, int num_workers = 1);
-    EvHttpServer(std::string host, int port, int num_workers = 1);
+    EvHttpServer(int port, int num_workers = 1, std::optional<EvHttpServerSslConfig> ssl_config = std::nullopt);
+    EvHttpServer(std::string host, int port, int num_workers = 1,
+                 std::optional<EvHttpServerSslConfig> ssl_config = std::nullopt);
     ~EvHttpServer();
 
     // register handler for an a path-method pair
@@ -55,6 +66,7 @@ public:
 
 private:
     Status _bind();
+    Status _init_ssl_ctx();
     HttpHandler* _find_handler(HttpRequest* req);
 
 private:
@@ -79,6 +91,9 @@ private:
     PathTrie<HttpHandler*> _options_handlers;
     std::vector<struct event_base*> _event_bases;
     std::vector<struct evhttp*> _https;
+
+    std::optional<EvHttpServerSslConfig> _ssl_config;
+    SSL_CTX* _ssl_ctx = nullptr;
 };
 
 } // namespace starrocks
