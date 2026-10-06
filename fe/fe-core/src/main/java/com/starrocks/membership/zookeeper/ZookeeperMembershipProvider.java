@@ -548,6 +548,37 @@ public class ZookeeperMembershipProvider implements MembershipProvider {
         }
     }
 
+    /**
+     * Under the creator ACL only a session of the FE principal can hold a registration under
+     * starting/, so a live node there is proof that the address belongs to this cluster.
+     */
+    @Override
+    public boolean vouches(HostPort node) throws MembershipException {
+        if (!creatorAcl) {
+            return false;
+        }
+        for (String child : childrenOf(starting())) {
+            try {
+                if (HostPort.parse(child.substring(0, child.lastIndexOf('-'))).sameNode(node)) {
+                    return true;
+                }
+            } catch (IllegalArgumentException e) {
+                LOG.warn("zookeeper membership: unreadable starting child '{}'", child);
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Answers before start(), so MembershipProviders can drop the token requirement: reads the
+     * config directly instead of the field start() fills in.
+     */
+    @Override
+    public boolean requiresToken() {
+        return !"sasl".equals(Strings.nullToEmpty(Config.fe_membership_zookeeper_acl).trim()
+                .toLowerCase(Locale.ROOT));
+    }
+
     /** Wire format of a znode under {@code frontends/}. */
     record FrontendPayload(String role, String nodeName, String clusterId) {
     }

@@ -435,6 +435,28 @@ public class ZookeeperMembershipProviderTest {
         Assertions.assertTrue(second.seeds().isEmpty());
     }
 
+    @Test
+    public void testCreatorAclVouchesForRegisteredFrontendsOnly() throws Exception {
+        Config.fe_membership_zookeeper_acl = "none";
+        ZookeeperMembershipProvider plain = started("10.0.0.1");
+        Assertions.assertTrue(plain.requiresToken());
+        Assertions.assertFalse(plain.vouches(new HostPort("10.0.0.1", 9010)));
+
+        protectNamespace("/starrocks5");
+        Config.fe_membership_zookeeper_root = "/starrocks5/fe-membership";
+        Config.fe_membership_zookeeper_acl = "sasl";
+        Config.fe_membership_zookeeper_servers = server.connectString();
+        ZookeeperMembershipProvider first = new ZookeeperMembershipProvider();
+        first.setSessionAuthForTest("digest", "fe:secret");
+        first.start(new MembershipContext(new HostPort("10.0.0.1", 9010), FrontendNodeType.FOLLOWER, false));
+        providers.add(first);
+
+        Assertions.assertFalse(first.requiresToken());
+        Assertions.assertTrue(first.vouches(new HostPort("10.0.0.1", 9010)));
+        Assertions.assertFalse(first.vouches(new HostPort("10.9.9.9", 9010)));
+        Assertions.assertFalse(first.vouches(new HostPort("10.0.0.1", 9050)));
+    }
+
     /** Locks "/" and creates the parent with the creator ACL, as an ensemble admin would. */
     private void protectNamespace(String parent) throws Exception {
         try (CuratorFramework ops = CuratorFrameworkFactory.newClient(server.connectString(),

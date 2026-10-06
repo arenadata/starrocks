@@ -66,6 +66,22 @@ public interface MembershipProvider extends AutoCloseable {
     default void addChangeListener(Runnable onChange) {
     }
 
+    /**
+     * True when the provider carries its own proof of membership, e.g. a registration in a store
+     * only cluster members can write to. Such a provider needs no shared auth_token.
+     */
+    default boolean requiresToken() {
+        return true;
+    }
+
+    /**
+     * True when the provider can prove that this exact node belongs to the cluster. The join
+     * request of a vouched node is accepted without the shared token.
+     */
+    default boolean vouches(HostPort node) throws MembershipException {
+        return false;
+    }
+
     @Override
     default void close() {
     }

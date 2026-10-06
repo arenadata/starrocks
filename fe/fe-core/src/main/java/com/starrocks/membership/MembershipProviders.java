@@ -94,9 +94,6 @@ public final class MembershipProviders {
             context = null;
             return;
         }
-        if (Strings.isNullOrEmpty(Config.auth_token)) {
-            throw new MembershipException("fe_membership_provider=" + name + " requires auth_token to be set in fe.conf");
-        }
         FrontendNodeType role = parseRole(Config.fe_membership_role);
         validateInitialState(Config.fe_cluster_initial_state);
         if (isInitialStateNew()) {
@@ -108,11 +105,15 @@ public final class MembershipProviders {
         MembershipContext ctx = new MembershipContext(
                 new HostPort(FrontendOptions.getLocalHostAddress(), Config.edit_log_port), role, FrontendOptions.isUseFqdn());
         MembershipProvider provider = lookup(name, starRocksHome);
+        if (provider.requiresToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            throw new MembershipException("fe_membership_provider=" + name + " requires auth_token to be set in fe.conf");
+        }
         provider.start(ctx);
         current = provider;
         context = ctx;
-        LOG.info("membership provider {} started: self {}, role {}, initial state {}",
-                name, ctx.self(), role, normalize(Config.fe_cluster_initial_state));
+        LOG.info("membership provider {} started: self {}, role {}, initial state {}{}",
+                name, ctx.self(), role, normalize(Config.fe_cluster_initial_state),
+                provider.requiresToken() ? "" : " (membership proof replaces auth_token)");
     }
 
     private static MembershipProvider lookup(String name, String starRocksHome) throws MembershipException {

@@ -18,6 +18,8 @@ import com.starrocks.http.ActionController;
 import com.starrocks.http.BaseRequest;
 import com.starrocks.http.IAction;
 import com.starrocks.membership.FakeMembershipProvider;
+import com.starrocks.membership.HostPort;
+import com.starrocks.membership.MembershipException;
 import com.starrocks.membership.MembershipProviders;
 import io.netty.handler.codec.http.DefaultFullHttpRequest;
 import io.netty.handler.codec.http.HttpMethod;
@@ -45,6 +47,47 @@ public class MembershipActionTest {
         MembershipAction.registerAction(controller);
         Assertions.assertNotNull(handler(controller, HttpMethod.GET, MembershipAction.LEADER_PATH));
         Assertions.assertNotNull(handler(controller, HttpMethod.POST, MembershipAction.JOIN_PATH));
+    }
+
+    private static final HostPort JOINER = new HostPort("10.0.0.7", 9010);
+
+    @Test
+    public void testTokenMatchAuthorizesWithoutProvider() {
+        Assertions.assertEquals(MembershipAction.Authorization.AUTHORIZED,
+                MembershipAction.authorize("secret", "secret", null, JOINER));
+    }
+
+    @Test
+    public void testTokenMismatchWithoutVouchingIsUnauthorized() {
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        Assertions.assertEquals(MembershipAction.Authorization.UNAUTHORIZED,
+                MembershipAction.authorize("wrong", "secret", provider, JOINER));
+        Assertions.assertEquals(MembershipAction.Authorization.UNAUTHORIZED,
+                MembershipAction.authorize(null, "secret", provider, JOINER));
+    }
+
+    @Test
+    public void testVouchingAuthorizesDespiteTokenMismatch() {
+        FakeMembershipProvider provider = new FakeMembershipProvider() {
+            @Override
+            public boolean vouches(HostPort node) {
+                return JOINER.sameNode(node);
+            }
+        };
+        Assertions.assertEquals(MembershipAction.Authorization.AUTHORIZED,
+                MembershipAction.authorize(null, "secret", provider, JOINER));
+    }
+
+    @Test
+    public void testVouchingFailureIsUnavailableNotUnauthorized() {
+        FakeMembershipProvider provider = new FakeMembershipProvider() {
+            @Override
+            public boolean vouches(HostPort node) throws MembershipException {
+                throw new MembershipException("zookeeper is down");
+            }
+        };
+        Assertions.assertEquals(MembershipAction.Authorization.UNAVAILABLE,
+                MembershipAction.authorize(null, "secret", provider, JOINER));
     }
 
     private static IAction handler(ActionController controller, HttpMethod method, String path) {

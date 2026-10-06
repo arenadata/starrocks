@@ -16,6 +16,7 @@ package com.starrocks.membership;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Strings;
 import com.starrocks.common.Config;
 import com.starrocks.common.util.NetUtils;
 import com.starrocks.ha.FrontendNodeType;
@@ -106,12 +107,15 @@ final class HttpLeaderClient implements MembershipJoiner.LeaderClient, AutoClose
     }
 
     private HttpRequest joinRequest(URI uri, String body) {
-        return HttpRequest.newBuilder(uri)
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
-                .header(MembershipApi.TOKEN_HEADER, Config.auth_token)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (!Strings.isNullOrEmpty(Config.auth_token)) {
+            // with a vouching provider the join is authorized without the shared token
+            builder.header(MembershipApi.TOKEN_HEADER, Config.auth_token);
+        }
+        return builder.build();
     }
 
     private HttpResponse<String> send(HttpRequest request) throws IOException {

@@ -2197,7 +2197,9 @@ public class Config extends ConfigBase {
 
     /**
      * Membership provider that lets FEs join the cluster without ALTER SYSTEM ADD and --helper:
-     * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token to be set.
+     * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token,
+     * except a provider that carries its own membership proof (zookeeper with
+     * fe_membership_zookeeper_acl=sasl).
      */
     @ConfField
     public static String fe_membership_provider = "none";

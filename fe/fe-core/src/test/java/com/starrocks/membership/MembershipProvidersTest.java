@@ -17,15 +17,27 @@ package com.starrocks.membership;
 import com.starrocks.common.Config;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.membership.embedded.EmbeddedMembershipProvider;
+import com.starrocks.membership.zookeeper.InProcessZooKeeper;
 import com.starrocks.service.FrontendOptions;
 import mockit.Mock;
 import mockit.MockUp;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.retry.RetryOneTime;
+import org.apache.zookeeper.ZooDefs;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 
 public class MembershipProvidersTest {
+
+    @TempDir
+    Path tempDir;
 
     @BeforeEach
     public void mockLocalAddress() {
@@ -70,6 +82,38 @@ public class MembershipProvidersTest {
         Config.auth_token = "";
         MembershipException e = Assertions.assertThrows(MembershipException.class, () -> MembershipProviders.init(null));
         Assertions.assertTrue(e.getMessage().contains("requires auth_token"), e.getMessage());
+    }
+
+    @Test
+    public void testVouchingProviderSkipsTheTokenRequirement() throws Exception {
+        try (InProcessZooKeeper zooKeeper = new InProcessZooKeeper(tempDir.resolve("zk"))) {
+            try (CuratorFramework ops = CuratorFrameworkFactory.newClient(zooKeeper.connectString(),
+                    new RetryOneTime(1000))) {
+                ops.start();
+                ops.getZookeeperClient().getZooKeeper()
+                        .addAuthInfo("digest", "fe:secret".getBytes(StandardCharsets.UTF_8));
+                ops.setACL().withACL(ZooDefs.Ids.CREATOR_ALL_ACL).forPath("/");
+                ops.create().withACL(ZooDefs.Ids.CREATOR_ALL_ACL).forPath("/vouching");
+            }
+
+            Config.fe_membership_provider = "zookeeper";
+            Config.auth_token = "";
+            Config.fe_membership_zookeeper_servers = zooKeeper.connectString();
+            Config.fe_membership_zookeeper_root = "/vouching/fe-membership";
+            Config.fe_membership_zookeeper_acl = "sasl";
+
+            // no kerberos in the UT, so the session cannot authenticate and start() fails on the
+            // creator ACL — but not on the auth_token requirement the test is about
+            MembershipException e = Assertions.assertThrows(MembershipException.class,
+                    () -> MembershipProviders.init(null));
+            Assertions.assertFalse(e.getMessage().contains("requires auth_token"), e.getMessage());
+            Assertions.assertTrue(e.getMessage().contains("authenticated"), e.getMessage());
+        } finally {
+            MembershipProviders.close();
+            Config.fe_membership_zookeeper_servers = "";
+            Config.fe_membership_zookeeper_root = "/starrocks/fe-membership";
+            Config.fe_membership_zookeeper_acl = "none";
+        }
     }
 
     @Test
