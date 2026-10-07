@@ -29,6 +29,7 @@ import org.ietf.jgss.Oid;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.UndeclaredThrowableException;
 import java.net.InetAddress;
 import java.security.PrivilegedExceptionAction;
 
@@ -118,9 +119,13 @@ public class KerberosLoginManager {
                             (PrivilegedExceptionAction<GSSCredential>) () -> GSSManager.getInstance().createCredential(
                                     null, GSSCredential.DEFAULT_LIFETIME, new Oid("1.2.840.113554.1.2.2"),
                                     GSSCredential.ACCEPT_ONLY));
-                } catch (IOException | InterruptedException e) {
+                } catch (IOException | InterruptedException | RuntimeException e) {
+                    // hadoop doAs rethrows undeclared checked exceptions (e.g. GSSException)
+                    // wrapped in UndeclaredThrowableException
+                    Throwable cause = (e instanceof UndeclaredThrowableException && e.getCause() != null)
+                            ? e.getCause() : e;
                     throw new AuthenticationException(
-                            "failed to create the kerberos acceptor credential: " + e.getMessage());
+                            "failed to create the kerberos acceptor credential: " + cause.getMessage());
                 }
             }
             return acceptorCredential;

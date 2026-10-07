@@ -42,7 +42,9 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -275,6 +277,53 @@ public class MysqlAuthPacketTest {
                             new byte[] {0}, "starrocks/fe1.example.com@EXAMPLE.COM".getBytes(StandardCharsets.UTF_8),
                             new byte[] {0, 0}),
                     sent.get());
+        } finally {
+            Config.kerberos_principal = savedPrincipal;
+        }
+    }
+
+    @Test
+    public void testKerberosSwitchFailsClosedWithoutPrincipal() throws Exception {
+        String savedPrincipal = Config.kerberos_principal;
+        try {
+            Config.kerberos_principal = "";
+            List<byte[]> sent = new ArrayList<>();
+            new MockUp<MysqlChannel>() {
+                @Mock
+                public void sendAndFlush(ByteBuffer packet) throws IOException {
+                    byte[] copy = new byte[packet.remaining()];
+                    packet.get(copy);
+                    sent.add(copy);
+                }
+
+                @Mock
+                public ByteBuffer fetchOnePacket() throws IOException {
+                    MysqlSerializer serializer = MysqlSerializer.newInstance();
+                    serializer.writeInt4(MysqlCapability.DEFAULT_CAPABILITY.getFlags());
+                    serializer.writeInt4(1024000);
+                    serializer.writeInt1(33);
+                    serializer.writeBytes(new byte[23]);
+                    serializer.writeNulTerminateString("harbor");
+                    serializer.writeInt1(20);
+                    serializer.writeBytes(new byte[20]);
+                    serializer.writeNulTerminateString("");
+                    serializer.writeNulTerminateString("mysql_native_password");
+                    return serializer.toByteBuffer();
+                }
+            };
+
+            AuthenticationMgr authenticationMgr = new AuthenticationMgr();
+            GlobalStateMgr.getCurrentState().setAuthenticationMgr(authenticationMgr);
+            CreateUserStmt createUserStmt = (CreateUserStmt) SqlParser
+                    .parse("create user harbor identified with kerberos", 32).get(0);
+            Analyzer.analyze(createUserStmt, ctx);
+            authenticationMgr.createUser(createUserStmt);
+
+            MysqlProto.NegotiateResult result = MysqlProto.negotiate(new ConnectContext());
+            Assertions.assertEquals(NegotiateState.READ_AUTH_SWITCH_PKG_FAILED, result.state());
+            // handshake + an ERR packet: the client must see a server error, not a bare disconnect
+            Assertions.assertEquals(2, sent.size());
+            Assertions.assertEquals((byte) 0xFF, sent.get(1)[0]);
         } finally {
             Config.kerberos_principal = savedPrincipal;
         }

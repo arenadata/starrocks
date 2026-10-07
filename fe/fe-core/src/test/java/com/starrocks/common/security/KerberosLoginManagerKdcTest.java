@@ -16,8 +16,11 @@ package com.starrocks.common.security;
 
 import com.starrocks.authentication.AuthenticationException;
 import com.starrocks.common.Config;
+import mockit.Mock;
+import mockit.MockUp;
 import org.apache.hadoop.minikdc.MiniKdc;
 import org.ietf.jgss.GSSCredential;
+import org.ietf.jgss.GSSException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -30,6 +33,7 @@ import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.Properties;
+import javax.security.auth.Subject;
 
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class KerberosLoginManagerKdcTest {
@@ -93,5 +97,30 @@ public class KerberosLoginManagerKdcTest {
         Assertions.assertNotNull(cred);
         Assertions.assertTrue((cred.getUsage() & GSSCredential.ACCEPT_ONLY) != 0);
         Assertions.assertSame(cred, KerberosLoginManager.acceptorCredential());
+    }
+
+    @Test
+    @Order(3)
+    public void testAcceptorCredentialWrapsGssFailure() throws Exception {
+        // fresh login with an empty credential cache, so credential creation runs again
+        KerberosLoginManager.resetForTest();
+        KerberosLoginManager.loginIfConfigured();
+
+        new MockUp<Subject>() {
+            @Mock
+            public static Object doAs(Subject subject, java.security.PrivilegedExceptionAction<?> action)
+                    throws java.security.PrivilegedActionException {
+                throw new java.security.PrivilegedActionException(new GSSException(GSSException.FAILURE));
+            }
+
+            @Mock
+            public static Object callAs(Subject subject, java.util.concurrent.Callable<?> action)
+                    throws Exception {
+                throw new java.security.PrivilegedActionException(new GSSException(GSSException.FAILURE));
+            }
+        };
+        AuthenticationException e = Assertions.assertThrows(AuthenticationException.class,
+                KerberosLoginManager::acceptorCredential);
+        Assertions.assertTrue(e.getMessage().contains("acceptor credential"), e.getMessage());
     }
 }
