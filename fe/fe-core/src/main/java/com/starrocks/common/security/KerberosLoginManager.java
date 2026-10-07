@@ -132,7 +132,7 @@ public class KerberosLoginManager {
      * resets UserGroupInformation — without the UGI reset the JVM caches the login user
      * across tests.
      */
-    static void resetForTest() {
+    public static void resetForTest() {
         synchronized (KerberosLoginManager.class) {
             acceptorCredential = null;
             loggedIn = false;
