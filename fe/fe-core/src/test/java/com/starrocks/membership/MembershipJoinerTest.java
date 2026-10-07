@@ -14,6 +14,7 @@
 
 package com.starrocks.membership;
 
+import com.starrocks.common.Config;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.membership.MembershipJoiner.Decision;
 import com.starrocks.membership.MembershipJoiner.JoinOutcome;
@@ -46,6 +47,7 @@ public class MembershipJoinerTest {
         final Set<HostPort> unreachable = new HashSet<>();
         final List<HostPort> leaderCalls = new ArrayList<>();
         final List<HostPort> joinCalls = new ArrayList<>();
+        final List<String> joinTokens = new ArrayList<>();
         JoinOutcome joinOutcome;
         boolean joinUnreachable = false;
 
@@ -59,8 +61,10 @@ public class MembershipJoinerTest {
         }
 
         @Override
-        public JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role) throws IOException {
+        public JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role, String token)
+                throws IOException {
             joinCalls.add(leaderHttp);
+            joinTokens.add(token);
             if (joinUnreachable) {
                 throw new IOException("connection reset");
             }
@@ -178,15 +182,99 @@ public class MembershipJoinerTest {
 
     @Test
     public void testRejectedJoinIsFatal() {
+        Config.auth_token = "secret";
+        try {
+            FakeMembershipProvider provider = new FakeMembershipProvider();
+            provider.seeds = List.of(SEED1);
+            FakeClient client = new FakeClient();
+            client.leaders.put(SEED1, leaderInfo());
+            client.joinOutcome = JoinOutcome.failed(401, "token mismatch");
+
+            MembershipException e = Assertions.assertThrows(MembershipException.class,
+                    () -> joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+            Assertions.assertTrue(e.getMessage().contains("401 token mismatch"), e.getMessage());
+        } finally {
+            Config.auth_token = "";
+        }
+    }
+
+    @Test
+    public void testRejectedTokenlessJoinIsRetried() throws Exception {
+        // no auth_token configured: the joiner sent no token, so a rejection cannot be fixed in
+        // fe.conf — the membership proof may simply not have reached the leader yet
+        Config.auth_token = "";
         FakeMembershipProvider provider = new FakeMembershipProvider();
         provider.seeds = List.of(SEED1);
+        FakeClient client = new FakeClient();
+        client.leaders.put(SEED1, leaderInfo());
+        client.joinOutcome = JoinOutcome.failed(401, "no token and no membership proof");
+        Assertions.assertNull(joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+    }
+
+    @Test
+    public void testJoinUsesTheProviderTokenWhenConfigHasNone() throws Exception {
+        // acl=none without a configured secret: the joiner takes the token from the provider
+        Config.auth_token = "";
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.seeds = List.of(SEED1);
+        provider.providesToken = true;
+        provider.tokenToRead = "zk-token";
+        FakeClient client = new FakeClient();
+        client.leaders.put(SEED1, leaderInfo());
+        client.joinOutcome = joined(LEADER);
+
+        Assertions.assertEquals(Decision.ofJoin(LEADER),
+                joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+        Assertions.assertEquals(List.of("zk-token"), client.joinTokens);
+    }
+
+    @Test
+    public void testEmptyProviderTokenJoinsWithoutTheHeader() throws Exception {
+        // an empty record is no token: nothing is sent and a rejection stays retryable
+        Config.auth_token = "";
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.seeds = List.of(SEED1);
+        provider.providesToken = true;
+        provider.tokenToRead = "";
+        FakeClient client = new FakeClient();
+        client.leaders.put(SEED1, leaderInfo());
+        client.joinOutcome = joined(LEADER);
+
+        Assertions.assertEquals(Decision.ofJoin(LEADER),
+                joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+        Assertions.assertEquals(java.util.Arrays.asList((String) null), client.joinTokens);
+    }
+
+    @Test
+    public void testRejectedJoinIsRetriedUntilTheProviderHasARecord() throws Exception {
+        // the provider serves tokens but has none yet: the tokenless rejection is retried
+        Config.auth_token = "";
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.seeds = List.of(SEED1);
+        provider.providesToken = true;
+        provider.tokenToRead = null;
+        FakeClient client = new FakeClient();
+        client.leaders.put(SEED1, leaderInfo());
+        client.joinOutcome = JoinOutcome.failed(401, "no token and no membership proof");
+        Assertions.assertNull(joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
+    }
+
+    @Test
+    public void testRejectedProviderTokenIsFatal() {
+        // the token was read from the provider and still rejected: nothing in fe.conf can fix
+        // this, the record in the provider backend is wrong
+        Config.auth_token = "";
+        FakeMembershipProvider provider = new FakeMembershipProvider();
+        provider.seeds = List.of(SEED1);
+        provider.providesToken = true;
+        provider.tokenToRead = "zk-token";
         FakeClient client = new FakeClient();
         client.leaders.put(SEED1, leaderInfo());
         client.joinOutcome = JoinOutcome.failed(401, "token mismatch");
 
         MembershipException e = Assertions.assertThrows(MembershipException.class,
                 () -> joiner(provider, client, new CountingSleeper(), false, List.of()).attempt(1));
-        Assertions.assertTrue(e.getMessage().contains("401 token mismatch"), e.getMessage());
+        Assertions.assertTrue(e.getMessage().contains("401"), e.getMessage());
     }
 
     @Test

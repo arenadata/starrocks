@@ -15,6 +15,7 @@
 package com.starrocks.membership;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Strings;
 import com.starrocks.common.Config;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.server.RunMode;
@@ -67,7 +68,9 @@ public final class MembershipJoiner implements AutoCloseable {
         /** Empty when the seed answers but has no leader. IOException when it does not answer. */
         Optional<LeaderInfo> leader(HostPort seed) throws IOException;
 
-        JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role) throws IOException;
+        /** The token is what the joiner resolved for this request; null sends no token header. */
+        JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role, String token)
+                throws IOException;
     }
 
     public interface Sleeper {
@@ -206,9 +209,10 @@ public final class MembershipJoiner implements AutoCloseable {
                     + " differs from the configured " + RunMode.name());
         }
         HostPort leaderHttp = new HostPort(leader.leader().host(), leader.leaderHttpPort());
+        String token = effectiveToken();
         JoinOutcome outcome;
         try {
-            outcome = client.join(leaderHttp, ctx.self(), ctx.desiredRole());
+            outcome = client.join(leaderHttp, ctx.self(), ctx.desiredRole(), token);
         } catch (IOException e) {
             LOG.warn("join request to leader {} failed: {}", leaderHttp, e.getMessage());
             return null;
@@ -224,7 +228,18 @@ public final class MembershipJoiner implements AutoCloseable {
                         + "this FE keeps waiting with it as helper", leader.leader(), ctx.desiredRole(), ctx.self());
                 yield Decision.ofJoin(leader.leader());
             }
-            case 400, 401, 403, 409 -> throw new MembershipException("leader " + leader.leader()
+            case 401 -> {
+                if (token == null) {
+                    // nothing was sent, so no fe.conf value can fix this: the token record or the
+                    // membership proof may simply not have reached the leader yet
+                    LOG.warn("leader {} rejected the tokenless join ({}), retrying",
+                            leader.leader(), outcome.message());
+                    yield null;
+                }
+                throw new MembershipException("leader " + leader.leader()
+                        + " rejected the join request: " + outcome.status() + " " + outcome.message());
+            }
+            case 400, 403, 409 -> throw new MembershipException("leader " + leader.leader()
                     + " rejected the join request: " + outcome.status() + " " + outcome.message());
             default -> {
                 LOG.warn("leader {} answered {} {} to the join request, retrying",
@@ -232,5 +247,26 @@ public final class MembershipJoiner implements AutoCloseable {
                 yield null;
             }
         };
+    }
+
+    /**
+     * Token for the join request: the fe.conf value when set, otherwise the token the provider
+     * serves, e.g. from its backend. Empty normalizes to null: nothing is sent, a 401 is then
+     * retried rather than fatal. A provider read failure is not fatal either — the tokenless
+     * join is retried and the next round re-reads.
+     */
+    private String effectiveToken() {
+        if (!Strings.isNullOrEmpty(Config.auth_token)) {
+            return Config.auth_token;
+        }
+        if (!provider.providesToken()) {
+            return null;
+        }
+        try {
+            return Strings.emptyToNull(provider.readToken());
+        } catch (MembershipException e) {
+            LOG.warn("provider {} cannot read the join token yet: {}", provider.name(), e.getMessage());
+            return null;
+        }
     }
 }

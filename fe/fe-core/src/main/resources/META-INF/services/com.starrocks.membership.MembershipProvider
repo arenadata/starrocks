@@ -1,1 +1,2 @@
 com.starrocks.membership.embedded.EmbeddedMembershipProvider
+com.starrocks.membership.zookeeper.ZookeeperMembershipProvider

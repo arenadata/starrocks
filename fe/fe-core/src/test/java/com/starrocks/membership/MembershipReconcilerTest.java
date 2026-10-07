@@ -24,6 +24,7 @@ import com.starrocks.system.ComputeNode;
 import com.starrocks.system.Frontend;
 import com.starrocks.system.SystemInfoService;
 import com.starrocks.utframe.UtFrameUtils;
+import org.awaitility.Awaitility;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeAll;
@@ -36,6 +37,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class MembershipReconcilerTest {
@@ -300,5 +302,32 @@ public class MembershipReconcilerTest {
 
         reconciler.reconcileComputeNodes();
         Assertions.assertEquals(1, systemInfo.getComputeNodes().size());
+    }
+
+    @Test
+    public void testProviderChangeWakesTheReconcilerBeforeTheInterval() throws Exception {
+        NodeMgr nodeMgr = clusterOfThree();
+        AtomicInteger cycles = new AtomicInteger();
+        MembershipReconciler reconciler = new MembershipReconciler(new FakeMembershipProvider(), nodeMgr,
+                new SystemInfoService(), now::get) {
+            @Override
+            protected void runOneCycle() {
+                cycles.incrementAndGet();
+            }
+        };
+        reconciler.setInterval(3_600_000L);
+        try {
+            reconciler.start();
+            Awaitility.await().atMost(5, TimeUnit.SECONDS)
+                    .until(() -> cycles.get() >= 1);
+            int afterStart = cycles.get();
+
+            reconciler.trigger();
+
+            Awaitility.await().atMost(5, TimeUnit.SECONDS)
+                    .until(() -> cycles.get() > afterStart);
+        } finally {
+            reconciler.setStop();
+        }
     }
 }

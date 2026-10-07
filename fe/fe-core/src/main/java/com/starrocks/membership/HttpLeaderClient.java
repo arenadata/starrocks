@@ -16,6 +16,7 @@ package com.starrocks.membership;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.Strings;
 import com.starrocks.common.Config;
 import com.starrocks.common.util.NetUtils;
 import com.starrocks.ha.FrontendNodeType;
@@ -76,20 +77,21 @@ final class HttpLeaderClient implements MembershipJoiner.LeaderClient, AutoClose
     }
 
     @Override
-    public JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role) throws IOException {
+    public JoinOutcome join(HostPort leaderHttp, HostPort self, FrontendNodeType role, String token)
+            throws IOException {
         String body = MAPPER.writeValueAsString(Map.of(
                 "type", MembershipApi.TYPE_FRONTEND,
                 "host", self.host(),
                 "port", self.port(),
                 "role", role.name()));
         URI joinUri = uri(leaderHttp.host(), leaderHttp.port(), MembershipApi.JOIN_PATH);
-        HttpResponse<String> response = send(joinRequest(joinUri, body));
+        HttpResponse<String> response = send(joinRequest(joinUri, body, token));
         if (response.statusCode() == 307) {
             Optional<String> location = response.headers().firstValue("Location");
             if (location.isEmpty()) {
                 return JoinOutcome.failed(307, "redirect without Location");
             }
-            response = send(joinRequest(URI.create(location.get()), body));
+            response = send(joinRequest(URI.create(location.get()), body, token));
         }
         if (response.statusCode() != 200) {
             return JoinOutcome.failed(response.statusCode(), errorMessage(response.body()));
@@ -105,13 +107,16 @@ final class HttpLeaderClient implements MembershipJoiner.LeaderClient, AutoClose
         }
     }
 
-    private HttpRequest joinRequest(URI uri, String body) {
-        return HttpRequest.newBuilder(uri)
+    private HttpRequest joinRequest(URI uri, String body, String token) {
+        HttpRequest.Builder builder = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
-                .header(MembershipApi.TOKEN_HEADER, Config.auth_token)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(body))
-                .build();
+                .POST(HttpRequest.BodyPublishers.ofString(body));
+        if (!Strings.isNullOrEmpty(token)) {
+            // the token was resolved by the caller: fe.conf or a provider-served record
+            builder.header(MembershipApi.TOKEN_HEADER, token);
+        }
+        return builder.build();
     }
 
     private HttpResponse<String> send(HttpRequest request) throws IOException {

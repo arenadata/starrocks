@@ -64,6 +64,15 @@ public final class MembershipProviders {
         } catch (Exception e) {
             LOG.warn("membership provider {} failed to announce this FE", provider.name(), e);
         }
+        // with an open provider backend the cluster token is shared through the provider instead
+        // of fe.conf; every ready FE publishes the same persisted value, the first record wins
+        if (provider.providesToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            try {
+                provider.publishToken(nodeMgr.getToken());
+            } catch (Exception e) {
+                LOG.warn("membership provider {} failed to publish the join token", provider.name(), e);
+            }
+        }
     }
 
     /** On the leader: records a freshly bootstrapped cluster and starts the reconciler. */
@@ -82,6 +91,7 @@ public final class MembershipProviders {
         }
         if (reconciler == null) {
             reconciler = MembershipReconciler.forCurrentState(provider);
+            provider.addChangeListener(reconciler::trigger);
             reconciler.start();
         }
     }
@@ -92,9 +102,6 @@ public final class MembershipProviders {
             current = null;
             context = null;
             return;
-        }
-        if (Strings.isNullOrEmpty(Config.auth_token)) {
-            throw new MembershipException("fe_membership_provider=" + name + " requires auth_token to be set in fe.conf");
         }
         FrontendNodeType role = parseRole(Config.fe_membership_role);
         validateInitialState(Config.fe_cluster_initial_state);
@@ -107,11 +114,39 @@ public final class MembershipProviders {
         MembershipContext ctx = new MembershipContext(
                 new HostPort(FrontendOptions.getLocalHostAddress(), Config.edit_log_port), role, FrontendOptions.isUseFqdn());
         MembershipProvider provider = lookup(name, starRocksHome);
-        provider.start(ctx);
+        try {
+            // start first: it validates the provider's own config, so a bad provider setting is
+            // reported instead of the token requirement
+            provider.start(ctx);
+        } catch (MembershipException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new MembershipException("membership provider " + name + " failed to start: " + e.getMessage(), e);
+        }
+        if (provider.requiresToken() && !provider.providesToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            closeQuietly(provider);
+            throw new MembershipException("fe_membership_provider=" + name + " requires auth_token to be set in fe.conf");
+        }
         current = provider;
         context = ctx;
-        LOG.info("membership provider {} started: self {}, role {}, initial state {}",
-                name, ctx.self(), role, normalize(Config.fe_cluster_initial_state));
+        String tokenNote;
+        if (!provider.requiresToken()) {
+            tokenNote = " (membership proof replaces auth_token)";
+        } else if (provider.providesToken() && Strings.isNullOrEmpty(Config.auth_token)) {
+            tokenNote = " (join token is served by the provider)";
+        } else {
+            tokenNote = "";
+        }
+        LOG.info("membership provider {} started: self {}, role {}, initial state {}{}",
+                name, ctx.self(), role, normalize(Config.fe_cluster_initial_state), tokenNote);
+    }
+
+    private static void closeQuietly(MembershipProvider provider) {
+        try {
+            provider.close();
+        } catch (Exception e) {
+            LOG.warn("failed to close membership provider {}", provider.name(), e);
+        }
     }
 
     private static MembershipProvider lookup(String name, String starRocksHome) throws MembershipException {

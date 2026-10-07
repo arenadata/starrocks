@@ -2197,7 +2197,12 @@ public class Config extends ConfigBase {
 
     /**
      * Membership provider that lets FEs join the cluster without ALTER SYSTEM ADD and --helper:
-     * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token to be set.
+     * none, embedded, zookeeper, kubernetes. Any provider other than none requires auth_token,
+     * except a provider that serves the join token itself or carries its own membership proof
+     * (zookeeper serves the token through its backend, and with fe_membership_zookeeper_acl=sasl
+     * the live registration in the provider is the proof). An explicitly set auth_token is never
+     * published to the provider; removing it from fe.conf requires every FE to run code that
+     * serves the token, so change it as a full upgrade, not per node.
      */
     @ConfField
     public static String fe_membership_provider = "none";
@@ -2236,6 +2241,42 @@ public class Config extends ConfigBase {
      */
     @ConfField
     public static String fe_membership_embedded_members_file = "";
+
+    /**
+     * ZooKeeper ensemble of the zookeeper membership provider, comma separated host:port list.
+     * Required when fe_membership_provider is zookeeper.
+     */
+    @ConfField
+    public static String fe_membership_zookeeper_servers = "";
+
+    /**
+     * ZooKeeper znode the membership state of this cluster lives under: cluster id, announced frontends,
+     * desired compute nodes. One ensemble can serve several clusters with different roots.
+     */
+    @ConfField
+    public static String fe_membership_zookeeper_root = "/starrocks/fe-membership";
+
+    /**
+     * ZooKeeper session timeout in milliseconds. An FE that loses its session drops out of the announced
+     * frontend set for this long before ZooKeeper expires its ephemeral node.
+     */
+    @ConfField
+    public static int fe_membership_zookeeper_session_timeout_ms = 30000;
+
+    /**
+     * Access control of the membership znodes: none leaves them usable by every zookeeper client,
+     * and the join token is then shared through the token znode instead of fe.conf. sasl restricts
+     * the znodes to the authenticated FE principal, and no auth_token is needed at all: a live
+     * registration of the joining FE vouches for it. Requires the kerberos login of
+     * kerberos_principal, and every FE of the cluster must log in as the SAME principal (no _HOST
+     * pattern; sharing the principal across clusters makes them mutually trusting). The parent
+     * chain of fe_membership_zookeeper_root must already exist and must not be open to every
+     * client: zookeeper checks deletions against the parent, so an open ancestor would leave the
+     * tree deletable anyway. Applies to newly created nodes only: set it before the first FE
+     * starts, and create operator-maintained nodes (compute_nodes) with the same ACL.
+     */
+    @ConfField
+    public static String fe_membership_zookeeper_acl = "none";
 
     /**
      * Seconds between attempts of an FE with empty meta to find the leader through the membership provider.

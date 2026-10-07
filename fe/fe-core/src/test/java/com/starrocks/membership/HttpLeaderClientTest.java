@@ -25,10 +25,13 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 public class HttpLeaderClientTest {
     private HttpServer server;
     private int previousHttpPort;
+    private final List<String> joinTokenHeaders = new ArrayList<>();
 
     /** Serves 200 with the given bodies; a malformed 200 must surface as IOException, not a runtime crash. */
     private void startServer(String leaderBody, String joinBody) throws IOException {
@@ -37,6 +40,10 @@ public class HttpLeaderClientTest {
             byte[] body = exchange.getRequestURI().getPath().endsWith("/join")
                     ? joinBody.getBytes(StandardCharsets.UTF_8)
                     : leaderBody.getBytes(StandardCharsets.UTF_8);
+            if (exchange.getRequestURI().getPath().endsWith("/join")) {
+                List<String> tokens = exchange.getRequestHeaders().get("token");
+                joinTokenHeaders.add(tokens == null ? null : tokens.get(0));
+            }
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(200, body.length);
             try (OutputStream out = exchange.getResponseBody()) {
@@ -69,6 +76,20 @@ public class HttpLeaderClientTest {
         HttpLeaderClient client = new HttpLeaderClient();
         Assertions.assertThrows(IOException.class, () -> client.join(
                 new HostPort("127.0.0.1", Config.http_port), new HostPort("127.0.0.1", 9010),
-                FrontendNodeType.FOLLOWER));
+                FrontendNodeType.FOLLOWER, null));
+    }
+
+    @Test
+    public void testJoinSendsTheTokenOnlyWhenResolved() throws Exception {
+        String answer = "{\"role\": \"FOLLOWER\", \"node_name\": \"x\", \"helper\": \"127.0.0.1:9010\"}";
+        startServer("{}", answer);
+        HttpLeaderClient client = new HttpLeaderClient();
+        HostPort leader = new HostPort("127.0.0.1", Config.http_port);
+        HostPort self = new HostPort("127.0.0.1", 9010);
+
+        client.join(leader, self, FrontendNodeType.FOLLOWER, "secret");
+        client.join(leader, self, FrontendNodeType.FOLLOWER, null);
+
+        Assertions.assertEquals(java.util.Arrays.asList("secret", null), joinTokenHeaders);
     }
 }

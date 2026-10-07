@@ -1,0 +1,31 @@
+# Three FEs that form one cluster through the zookeeper membership provider: fe.conf carries no seed
+# list at all, every FE knows only the ensemble address. The bootstrap candidate is the FE that
+# registers under starting/ first, so all FEs may keep fe_cluster_initial_state=new: the cluster id
+# recorded in zookeeper forbids a second cluster even after a member loses its meta.
+x-fe: &fe
+  image: ${STARROCKS_FE_IMAGE:-starrocks-fe:membership-e2e}
+  command: ["/opt/starrocks/fe/bin/start_fe.sh", "--host_type", "FQDN", "--logconsole"]
+  volumes:
+    - ./fe-zk.conf:/opt/starrocks/fe/conf/fe.conf:ro
+  depends_on:
+    zookeeper:
+      condition: service_healthy
+
+services:
+  zookeeper:
+    image: zookeeper:3.9
+    healthcheck:
+      test: ["CMD-SHELL", "zkServer.sh status"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  fe1:
+    <<: *fe
+    hostname: fe1
+  fe2:
+    <<: *fe
+    hostname: fe2
+  fe3:
+    <<: *fe
+    hostname: fe3

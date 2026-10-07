@@ -27,10 +27,12 @@ import com.starrocks.http.IllegalArgException;
 import com.starrocks.membership.FrontendSpec;
 import com.starrocks.membership.HostPort;
 import com.starrocks.membership.MembershipApi;
+import com.starrocks.membership.MembershipException;
 import com.starrocks.membership.MembershipJoinService;
 import com.starrocks.membership.MembershipJoinService.ComputeNodeJoinResult;
 import com.starrocks.membership.MembershipJoinService.FrontendJoinResult;
 import com.starrocks.membership.MembershipJoinService.JoinException;
+import com.starrocks.membership.MembershipProvider;
 import com.starrocks.membership.MembershipProviders;
 import com.starrocks.server.GlobalStateMgr;
 import com.starrocks.server.NodeMgr;
@@ -46,7 +48,9 @@ import java.util.Locale;
  * Membership API used by FEs and CNs that join the cluster without ALTER SYSTEM ADD.
  * <pre>
  * GET  /api/v2/membership/leader   leader address, cluster id and run mode; no auth
- * POST /api/v2/membership/join     registers the calling node; header token = auth_token; leader only
+ * POST /api/v2/membership/join     registers the calling node; authorized by the shared token
+ *                                  (header token = auth_token) or, for frontends, by the
+ *                                  provider's membership proof; leader only
  * </pre>
  */
 public final class MembershipAction {
@@ -107,6 +111,32 @@ public final class MembershipAction {
         }
     }
 
+    /** Outcome of a join request's authorization. */
+    enum Authorization {
+        AUTHORIZED, UNAUTHORIZED, UNAVAILABLE
+    }
+
+    /**
+     * The shared token authorizes; when it does not match, a provider that carries its own
+     * membership proof may vouch for the exact node instead — frontends only: compute nodes
+     * never register with the provider. A failing vouch check is UNAVAILABLE, not UNAUTHORIZED:
+     * the caller should retry rather than give up.
+     */
+    static Authorization authorize(String token, String expectedToken, MembershipProvider provider,
+                                    HostPort node, boolean frontend) {
+        if (!Strings.isNullOrEmpty(token) && token.equals(expectedToken)) {
+            return Authorization.AUTHORIZED;
+        }
+        if (provider == null || !frontend) {
+            return Authorization.UNAUTHORIZED;
+        }
+        try {
+            return provider.vouches(node) ? Authorization.AUTHORIZED : Authorization.UNAUTHORIZED;
+        } catch (MembershipException e) {
+            return Authorization.UNAVAILABLE;
+        }
+    }
+
     public static class LeaderAction extends MembershipBaseAction {
         public LeaderAction(ActionController controller) {
             super(controller);
@@ -149,12 +179,6 @@ public final class MembershipAction {
             if (redirectToLeader(request, response)) {
                 return;
             }
-            NodeMgr nodeMgr = globalStateMgr.getNodeMgr();
-            String token = request.getRequest().headers().get(MembershipApi.TOKEN_HEADER);
-            if (Strings.isNullOrEmpty(token) || !token.equals(nodeMgr.getToken())) {
-                sendError(request, response, HttpResponseStatus.UNAUTHORIZED, "token mismatch");
-                return;
-            }
 
             JoinRequest body;
             try {
@@ -177,8 +201,27 @@ public final class MembershipAction {
                 return;
             }
 
-            MembershipJoinService service = MembershipJoinService.forCurrentState();
+            NodeMgr nodeMgr = globalStateMgr.getNodeMgr();
+            String token = request.getRequest().headers().get(MembershipApi.TOKEN_HEADER);
             String type = Strings.nullToEmpty(body.type()).trim().toUpperCase(Locale.ROOT);
+            Authorization authorization = authorize(token, nodeMgr.getToken(),
+                    MembershipProviders.current().orElse(null), node, TYPE_FRONTEND.equals(type));
+            switch (authorization) {
+                case AUTHORIZED -> {
+                    // proceed to the registration below
+                }
+                case UNAVAILABLE -> {
+                    sendError(request, response, HttpResponseStatus.SERVICE_UNAVAILABLE,
+                            "cannot verify membership right now");
+                    return;
+                }
+                case UNAUTHORIZED -> {
+                    sendError(request, response, HttpResponseStatus.UNAUTHORIZED, Strings.isNullOrEmpty(token)
+                            ? "no token and no membership proof for " + node : "token mismatch");
+                }
+            }
+
+            MembershipJoinService service = MembershipJoinService.forCurrentState();
             try {
                 switch (type) {
                     case TYPE_FRONTEND -> {

@@ -114,6 +114,24 @@ under the License.
             <artifactId>ipaddress</artifactId>
         </dependency>
 
+        <!-- https://mvnrepository.com/artifact/org.apache.zookeeper/zookeeper -->
+        <dependency>
+            <groupId>org.apache.zookeeper</groupId>
+            <artifactId>zookeeper</artifactId>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/org.apache.curator/curator-framework -->
+        <dependency>
+            <groupId>org.apache.curator</groupId>
+            <artifactId>curator-framework</artifactId>
+        </dependency>
+
+        <!-- https://mvnrepository.com/artifact/org.apache.curator/curator-recipes -->
+        <dependency>
+            <groupId>org.apache.curator</groupId>
+            <artifactId>curator-recipes</artifactId>
+        </dependency>
+
         <!-- https://mvnrepository.com/artifact/commons-codec/commons-codec -->
         <dependency>
             <groupId>commons-codec</groupId>
@@ -200,6 +218,13 @@ under the License.
             <artifactId>jprotobuf-starrocks</artifactId>
         </dependency>
 
+        <!-- must precede the jprotobuf-starrocks fat jar below: it bundles commons-io 2.7, whose
+             classes would otherwise win class loading and break hadoop's configuration2 -->
+        <dependency>
+            <groupId>commons-io</groupId>
+            <artifactId>commons-io</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.velocity</groupId>
             <artifactId>velocity-engine-core</artifactId>
@@ -221,11 +246,6 @@ under the License.
         <dependency>
             <groupId>com.baidu</groupId>
             <artifactId>jprotobuf-rpc-common</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>commons-io</groupId>
-            <artifactId>commons-io</artifactId>
         </dependency>
 
         <!-- https://mvnrepository.com/artifact/com.baidu/jprotobuf-rpc-core -->

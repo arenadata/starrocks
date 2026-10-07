@@ -15,17 +15,32 @@
 package com.starrocks.membership;
 
 import com.starrocks.common.Config;
+import com.starrocks.common.Pair;
 import com.starrocks.ha.FrontendNodeType;
 import com.starrocks.membership.embedded.EmbeddedMembershipProvider;
+import com.starrocks.membership.zookeeper.InProcessZooKeeper;
+import com.starrocks.server.NodeMgr;
 import com.starrocks.service.FrontendOptions;
 import mockit.Mock;
 import mockit.MockUp;
+import org.apache.curator.framework.CuratorFramework;
+import org.apache.curator.framework.CuratorFrameworkFactory;
+import org.apache.curator.retry.RetryOneTime;
+import org.apache.zookeeper.ZooDefs;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.List;
 
 public class MembershipProvidersTest {
+
+    @TempDir
+    Path tempDir;
 
     @BeforeEach
     public void mockLocalAddress() {
@@ -70,6 +85,108 @@ public class MembershipProvidersTest {
         Config.auth_token = "";
         MembershipException e = Assertions.assertThrows(MembershipException.class, () -> MembershipProviders.init(null));
         Assertions.assertTrue(e.getMessage().contains("requires auth_token"), e.getMessage());
+    }
+
+    @Test
+    public void testVouchingProviderSkipsTheTokenRequirement() throws Exception {
+        try (InProcessZooKeeper zooKeeper = new InProcessZooKeeper(tempDir.resolve("zk"))) {
+            try (CuratorFramework ops = CuratorFrameworkFactory.newClient(zooKeeper.connectString(),
+                    new RetryOneTime(1000))) {
+                ops.start();
+                ops.getZookeeperClient().getZooKeeper()
+                        .addAuthInfo("digest", "fe:secret".getBytes(StandardCharsets.UTF_8));
+                ops.setACL().withACL(ZooDefs.Ids.CREATOR_ALL_ACL).forPath("/");
+                ops.create().withACL(ZooDefs.Ids.CREATOR_ALL_ACL).forPath("/vouching");
+            }
+
+            Config.fe_membership_provider = "zookeeper";
+            Config.auth_token = "";
+            Config.fe_membership_zookeeper_servers = zooKeeper.connectString();
+            Config.fe_membership_zookeeper_root = "/vouching/fe-membership";
+            Config.fe_membership_zookeeper_acl = "sasl";
+
+            // no kerberos in the UT, so the session cannot authenticate and start() fails on the
+            // creator ACL — but not on the auth_token requirement the test is about
+            MembershipException e = Assertions.assertThrows(MembershipException.class,
+                    () -> MembershipProviders.init(null));
+            Assertions.assertFalse(e.getMessage().contains("requires auth_token"), e.getMessage());
+            Assertions.assertTrue(e.getMessage().contains("authenticated"), e.getMessage());
+        } finally {
+            MembershipProviders.close();
+            Config.fe_membership_zookeeper_servers = "";
+            Config.fe_membership_zookeeper_root = "/starrocks/fe-membership";
+            Config.fe_membership_zookeeper_acl = "none";
+        }
+    }
+
+    @Test
+    public void testZookeeperProviderAllowsEmptyTokenInConfig() throws Exception {
+        // acl=none: every ready FE publishes the cluster token in zookeeper, joiners read it
+        // back, so fe.conf does not have to carry the secret
+        try (InProcessZooKeeper zooKeeper = new InProcessZooKeeper(tempDir.resolve("zk"))) {
+            Config.fe_membership_provider = "zookeeper";
+            Config.auth_token = "";
+            Config.fe_membership_zookeeper_servers = zooKeeper.connectString();
+            Config.fe_membership_zookeeper_root = "/plain/fe-membership";
+            Config.fe_membership_zookeeper_acl = "none";
+
+            MembershipProviders.init(null);
+
+            Assertions.assertTrue(MembershipProviders.isEnabled());
+        } finally {
+            MembershipProviders.close();
+            Config.fe_membership_zookeeper_servers = "";
+            Config.fe_membership_zookeeper_root = "/starrocks/fe-membership";
+            Config.fe_membership_zookeeper_acl = "none";
+        }
+    }
+
+    @Test
+    public void testOnReadyPublishesTheClusterTokenOnlyWithoutConfigToken() {
+        new MockUp<NodeMgr>() {
+            @Mock
+            public Pair<String, Integer> getSelfNode() {
+                return Pair.create("127.0.0.1", 9010);
+            }
+
+            @Mock
+            public FrontendNodeType getRole() {
+                return FrontendNodeType.FOLLOWER;
+            }
+
+            @Mock
+            public String getNodeName() {
+                return "127.0.0.1_9010_1";
+            }
+
+            @Mock
+            public long getClusterId() {
+                return 42;
+            }
+
+            @Mock
+            public String getToken() {
+                return "persisted";
+            }
+        };
+        MembershipContext ctx = new MembershipContext(new HostPort("127.0.0.1", 9010),
+                FrontendNodeType.FOLLOWER, false);
+
+        Config.auth_token = "";
+        FakeMembershipProvider publisher = new FakeMembershipProvider();
+        publisher.providesToken = true;
+        MembershipProviders.setForTest(publisher, ctx);
+        MembershipProviders.onReady(new NodeMgr());
+        Assertions.assertEquals(List.of("persisted"), publisher.publishedTokens);
+        Assertions.assertEquals(1, publisher.announced.size());
+
+        Config.auth_token = "secret";
+        FakeMembershipProvider silent = new FakeMembershipProvider();
+        silent.providesToken = true;
+        MembershipProviders.setForTest(silent, ctx);
+        MembershipProviders.onReady(new NodeMgr());
+        Assertions.assertEquals(List.of(), silent.publishedTokens);
+        Assertions.assertEquals(1, silent.announced.size());
     }
 
     @Test

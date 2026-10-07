@@ -86,6 +86,15 @@ public class MembershipReconciler extends FrontendDaemon {
         }
     }
 
+    /**
+     * Wakes the daemon out of its interval sleep so a membership change notification is reconciled
+     * immediately. The interrupt flag is sticky, so a burst of notifications collapses into one extra
+     * cycle at most.
+     */
+    void trigger() {
+        this.interrupt();
+    }
+
     @VisibleForTesting
     void reconcileFrontends() throws MembershipException {
         if (!Config.fe_membership_auto_drop_fe) {
