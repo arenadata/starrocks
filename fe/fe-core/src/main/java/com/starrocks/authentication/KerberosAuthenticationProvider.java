@@ -1,0 +1,58 @@
+// Copyright 2021-present StarRocks, Inc. All rights reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package com.starrocks.authentication;
+
+import com.starrocks.common.ErrorCode;
+import com.starrocks.common.security.KerberosLoginManager;
+import com.starrocks.qe.ConnectContext;
+import com.starrocks.sql.ast.UserIdentity;
+
+import java.io.IOException;
+
+/**
+ * MariaDB auth_gssapi dialect: the switch packet names the client plugin
+ * "auth_gssapi_client" and carries "SPN NUL mech" as plugin data; the auth response
+ * holds the first raw GSS token, and further tokens are exchanged over the mysql
+ * channel until the context is established.
+ */
+public class KerberosAuthenticationProvider implements AuthenticationProvider {
+    private final String authString;
+
+    public KerberosAuthenticationProvider(String authString) {
+        this.authString = authString;
+    }
+
+    @Override
+    public byte[] authSwitchRequestPacket(ConnectContext context, String user, String host)
+            throws AuthenticationException {
+        String spn;
+        try {
+            spn = KerberosLoginManager.servicePrincipal();
+        } catch (IOException e) {
+            throw new AuthenticationException(
+                    "failed to resolve the kerberos service principal: " + e.getMessage());
+        }
+        if (spn.isEmpty()) {
+            throw new AuthenticationException("kerberos_principal is not configured on this FE");
+        }
+        return GssWireCodec.authSwitchData(spn, "");
+    }
+
+    @Override
+    public void authenticate(ConnectContext context, UserIdentity userIdentity, byte[] authResponse)
+            throws AuthenticationException {
+        throw new AuthenticationException(ErrorCode.ERR_AUTHENTICATION_FAIL, userIdentity.getUser(), "YES");
+    }
+}

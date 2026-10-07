@@ -23,6 +23,7 @@ import com.starrocks.authentication.JWTAuthenticationProvider;
 import com.starrocks.authentication.JWTSecurityIntegration;
 import com.starrocks.authentication.SecurityIntegration;
 import com.starrocks.common.Config;
+import com.starrocks.common.security.KerberosLoginManager;
 import com.starrocks.mysql.privilege.AuthPlugin;
 import com.starrocks.qe.ConnectContext;
 import com.starrocks.server.GlobalStateMgr;
@@ -40,8 +41,10 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class MysqlAuthPacketTest {
     static ConnectContext ctx;
@@ -211,5 +214,86 @@ public class MysqlAuthPacketTest {
         Assertions.assertEquals("mysql_clear_password", AuthPlugin.covertFromServerToClient("authentication_ldap_simple"));
         Assertions.assertEquals("authentication_openid_connect_client",
                 AuthPlugin.covertFromServerToClient("authentication_jwt"));
+    }
+
+    private static byte[] concat(byte[]... parts) {
+        int len = 0;
+        for (byte[] p : parts) {
+            len += p.length;
+        }
+        byte[] out = new byte[len];
+        int pos = 0;
+        for (byte[] p : parts) {
+            System.arraycopy(p, 0, out, pos, p.length);
+            pos += p.length;
+        }
+        return out;
+    }
+
+    @Test
+    public void testAuthPluginKerberos() {
+        Assertions.assertEquals("auth_gssapi_client", AuthPlugin.covertFromServerToClient("KERBEROS"));
+        Assertions.assertEquals("auth_gssapi_client", AuthPlugin.covertFromServerToClient("kerberos"));
+    }
+
+    @Test
+    public void testKerberosSwitchPacketBytes() throws Exception {
+        String savedPrincipal = Config.kerberos_principal;
+        try {
+            Config.kerberos_principal = "starrocks/fe1.example.com@EXAMPLE.COM";
+            AtomicReference<byte[]> sent = new AtomicReference<>();
+            new MockUp<MysqlChannel>() {
+                @Mock
+                public void sendAndFlush(ByteBuffer packet) throws IOException {
+                    byte[] copy = new byte[packet.remaining()];
+                    packet.get(copy);
+                    sent.set(copy);
+                }
+
+                @Mock
+                public ByteBuffer fetchOnePacket() throws IOException {
+                    return ByteBuffer.wrap(new byte[] {0x6E, 0x01});
+                }
+            };
+
+            AuthenticationMgr authenticationMgr = new AuthenticationMgr();
+            GlobalStateMgr.getCurrentState().setAuthenticationMgr(authenticationMgr);
+            CreateUserStmt createUserStmt = (CreateUserStmt) SqlParser
+                    .parse("create user harbor identified with kerberos", 32).get(0);
+            Analyzer.analyze(createUserStmt, ctx);
+            authenticationMgr.createUser(createUserStmt);
+
+            MysqlAuthPacket authPacket = buildPacket("harbor", new byte[20], AuthPlugin.Client.MYSQL_NATIVE_PASSWORD);
+            ConnectContext context = new ConnectContext();
+            MysqlProto.switchAuthPlugin(authPacket, context);
+
+            Assertions.assertEquals("auth_gssapi_client", authPacket.getPluginName());
+            // full payload: 0xFE | "auth_gssapi_client" 0x00 | SPN 0x00 | mech("") 0x00 — the trailing
+            // NUL is appended by MysqlProto after the provider's plugin data
+            Assertions.assertArrayEquals(
+                    concat(new byte[] {(byte) 0xFE}, "auth_gssapi_client".getBytes(StandardCharsets.UTF_8),
+                            new byte[] {0}, "starrocks/fe1.example.com@EXAMPLE.COM".getBytes(StandardCharsets.UTF_8),
+                            new byte[] {0, 0}),
+                    sent.get());
+        } finally {
+            Config.kerberos_principal = savedPrincipal;
+        }
+    }
+
+    @Test
+    public void testServicePrincipalHostExpansion() throws Exception {
+        String savedPrincipal = Config.kerberos_principal;
+        try {
+            Assertions.assertEquals("", KerberosLoginManager.servicePrincipal());
+            Config.kerberos_principal = "starrocks/_HOST@EXAMPLE.COM";
+            String spn = KerberosLoginManager.servicePrincipal();
+            Assertions.assertTrue(spn.startsWith("starrocks/"), spn);
+            Assertions.assertTrue(spn.endsWith("@EXAMPLE.COM"), spn);
+            Assertions.assertNotEquals("starrocks/_HOST@EXAMPLE.COM", spn);
+            Config.kerberos_principal = "starrocks/fe1.example.com@EXAMPLE.COM";
+            Assertions.assertEquals("starrocks/fe1.example.com@EXAMPLE.COM", KerberosLoginManager.servicePrincipal());
+        } finally {
+            Config.kerberos_principal = savedPrincipal;
+        }
     }
 }

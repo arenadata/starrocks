@@ -93,6 +93,19 @@ public class KerberosLoginManager {
         return loggedIn;
     }
 
+    /**
+     * The SPN this FE accepts GSSAPI clients on: {@code kerberos_principal} with _HOST
+     * resolved, the same resolution the login performs. Empty when Kerberos login is
+     * not configured.
+     */
+    public static String servicePrincipal() throws IOException {
+        String principal = Config.kerberos_principal.trim();
+        if (principal.isEmpty()) {
+            return "";
+        }
+        return SecurityUtil.getServerPrincipal(principal, InetAddress.getLocalHost().getCanonicalHostName());
+    }
+
     private static class ReloginDaemon extends Daemon {
         ReloginDaemon(long intervalMs) {
             super(RELOGIN_DAEMON_NAME, intervalMs);
