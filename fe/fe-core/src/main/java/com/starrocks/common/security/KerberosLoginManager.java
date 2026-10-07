@@ -14,6 +14,7 @@
 
 package com.starrocks.common.security;
 
+import com.starrocks.authentication.AuthenticationException;
 import com.starrocks.common.Config;
 import com.starrocks.common.InvalidConfException;
 import com.starrocks.common.util.Daemon;
@@ -22,10 +23,14 @@ import org.apache.hadoop.security.SecurityUtil;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.ietf.jgss.GSSCredential;
+import org.ietf.jgss.GSSManager;
+import org.ietf.jgss.Oid;
 
 import java.io.File;
 import java.io.IOException;
 import java.net.InetAddress;
+import java.security.PrivilegedExceptionAction;
 
 /**
  * Logs the FE process in to Kerberos from a keytab and keeps the ticket fresh, so that every
@@ -44,6 +49,7 @@ public class KerberosLoginManager {
 
     private static boolean loggedIn = false;
     private static Daemon reloginDaemon = null;
+    private static volatile GSSCredential acceptorCredential = null;
 
     private KerberosLoginManager() {
     }
@@ -91,6 +97,51 @@ public class KerberosLoginManager {
 
     public static synchronized boolean isLoggedIn() {
         return loggedIn;
+    }
+
+    /**
+     * Cached ACCEPT_ONLY krb5 credential built from the login Subject, used by the
+     * auth_gssapi client authentication plugin.
+     */
+    public static GSSCredential acceptorCredential() throws AuthenticationException {
+        GSSCredential cached = acceptorCredential;
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (KerberosLoginManager.class) {
+            if (acceptorCredential == null) {
+                if (!isLoggedIn()) {
+                    throw new AuthenticationException("kerberos login is not enabled on this FE");
+                }
+                try {
+                    acceptorCredential = UserGroupInformation.getLoginUser().doAs(
+                            (PrivilegedExceptionAction<GSSCredential>) () -> GSSManager.getInstance().createCredential(
+                                    null, GSSCredential.DEFAULT_LIFETIME, new Oid("1.2.840.113554.1.2.2"),
+                                    GSSCredential.ACCEPT_ONLY));
+                } catch (IOException | InterruptedException e) {
+                    throw new AuthenticationException(
+                            "failed to create the kerberos acceptor credential: " + e.getMessage());
+                }
+            }
+            return acceptorCredential;
+        }
+    }
+
+    /**
+     * Test-only: drops the credential cache, the login state and the relogin daemon, and
+     * resets UserGroupInformation — without the UGI reset the JVM caches the login user
+     * across tests.
+     */
+    static void resetForTest() {
+        synchronized (KerberosLoginManager.class) {
+            acceptorCredential = null;
+            loggedIn = false;
+            if (reloginDaemon != null) {
+                reloginDaemon.setStop();
+                reloginDaemon = null;
+            }
+            UserGroupInformation.reset();
+        }
     }
 
     /**
