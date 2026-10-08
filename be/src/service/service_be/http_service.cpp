@@ -79,6 +79,7 @@ HttpServiceBE::HttpServiceBE(DataCache* cache_env, ExecEnv* env, int port, int n
           _http_concurrent_limiter(new ConcurrentLimiter(config::be_http_num_workers - 1)) {}
 
 HttpServiceBE::~HttpServiceBE() {
+    _metrics_http_server.reset();
     _ev_http_server.reset();
     _web_page_handler.reset();
     STLDeleteElements(&_http_handlers);
@@ -86,10 +87,49 @@ HttpServiceBE::~HttpServiceBE() {
 
 void HttpServiceBE::stop() {
     _ev_http_server->stop();
+    if (_metrics_http_server != nullptr) {
+        _metrics_http_server->stop();
+    }
 }
 
 void HttpServiceBE::join() {
     _ev_http_server->join();
+    if (_metrics_http_server != nullptr) {
+        _metrics_http_server->join();
+    }
+}
+
+// Serves only read-only, scrape-oriented endpoints. Admin and data endpoints stay on be_http_port.
+Status HttpServiceBE::_start_metrics_server() {
+    if (config::be_metrics_port <= 0) {
+        return Status::OK();
+    }
+    std::optional<EvHttpServerSslConfig> ssl_config;
+    if (config::be_metrics_enable_https) {
+        ssl_config = EvHttpServerSslConfig{config::ssl_certificate_path, config::ssl_private_key_path};
+    }
+    _metrics_http_server = std::make_unique<EvHttpServer>(config::be_metrics_port, 1, std::move(ssl_config));
+
+    auto* metrics_action = new MetricsAction(StarRocksMetrics::instance()->metrics());
+    _metrics_http_server->register_handler(HttpMethod::GET, "/metrics", metrics_action);
+    _http_handlers.emplace_back(metrics_action);
+
+    auto* memory_metrics_action = new MemoryMetricsAction();
+    _metrics_http_server->register_handler(HttpMethod::GET, "/metrics/memory", memory_metrics_action);
+    _http_handlers.emplace_back(memory_metrics_action);
+
+    auto* health_action = new HealthAction(_env);
+    _metrics_http_server->register_handler(HttpMethod::GET, "/api/health", health_action);
+    _http_handlers.emplace_back(health_action);
+
+    auto st = _metrics_http_server->start();
+    if (!st.ok()) {
+        return st.clone_and_prepend("failed to start metrics http server on port " +
+                                    std::to_string(config::be_metrics_port));
+    }
+    LOG(INFO) << "Metrics " << (config::be_metrics_enable_https ? "https" : "http") << " server started on port "
+              << config::be_metrics_port;
+    return Status::OK();
 }
 
 Status HttpServiceBE::start() {
@@ -294,6 +334,7 @@ Status HttpServiceBE::start() {
 #endif
 
     RETURN_IF_ERROR(_ev_http_server->start());
+    RETURN_IF_ERROR(_start_metrics_server());
     return Status::OK();
 }
 

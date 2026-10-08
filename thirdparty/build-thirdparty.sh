@@ -345,10 +345,18 @@ build_libevent() {
         ./autogen.sh
     fi
 
+    # Build libevent_openssl against the thirdparty OpenSSL (built earlier, see all_packages).
+    # Static libssl/libcrypto (built with -lz) need -lz -ldl -lpthread, otherwise configure silently disables OpenSSL.
     LDFLAGS="-L${TP_LIB_DIR}" \
-    ./configure --prefix=$TP_INSTALL_DIR --enable-shared=no --disable-samples --disable-libevent-regress
+    LIBS="-lz -ldl -lpthread" \
+    ./configure --prefix=$TP_INSTALL_DIR --enable-shared=no --disable-samples --disable-libevent-regress \
+        --enable-openssl
     make -j$PARALLEL
     make install
+    if [ ! -f $TP_LIB_DIR/libevent_openssl.a ]; then
+        echo "libevent_openssl.a was not built, check that OpenSSL is installed in $TP_INSTALL_DIR"
+        exit 1
+    fi
 }
 
 build_openssl() {
@@ -1654,12 +1662,12 @@ export CFLAGS=$GLOBAL_CFLAGS
 
 # Define default build order
 declare -a all_packages=(
-    libevent
     zlib
     lz4
     lzo2
     bzip
     openssl
+    libevent # must after openssl, for libevent_openssl
     boost # must before thrift
     protobuf
     gflags
