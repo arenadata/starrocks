@@ -17,6 +17,7 @@ package com.starrocks.mysql.privilege;
 import com.google.re2j.Pattern;
 import com.starrocks.authentication.AuthenticationProvider;
 import com.starrocks.authentication.JWTAuthenticationProvider;
+import com.starrocks.authentication.KerberosAuthenticationProvider;
 import com.starrocks.authentication.LDAPAuthProvider;
 import com.starrocks.authentication.OAuth2AuthenticationProvider;
 import com.starrocks.authentication.OAuth2Context;
@@ -34,7 +35,8 @@ public class AuthPlugin {
         MYSQL_NATIVE_PASSWORD,
         AUTHENTICATION_LDAP_SIMPLE,
         AUTHENTICATION_JWT,
-        AUTHENTICATION_OAUTH2;
+        AUTHENTICATION_OAUTH2,
+        KERBEROS;
 
         public AuthenticationProvider getProvider(String authString) {
             AuthPlugin.Server authPlugin = this;
@@ -111,6 +113,10 @@ public class AuthPlugin {
                             COMMA_SPLIT.split(oauth2RequiredAudience.trim()),
                             oauthConnectWaitTimeout));
                 }
+
+                case KERBEROS -> {
+                    return new KerberosAuthenticationProvider(authString);
+                }
             }
 
             return null;
@@ -121,7 +127,8 @@ public class AuthPlugin {
         MYSQL_NATIVE_PASSWORD,
         MYSQL_CLEAR_PASSWORD,
         AUTHENTICATION_OPENID_CONNECT_CLIENT,
-        AUTHENTICATION_OAUTH2_CLIENT;
+        AUTHENTICATION_OAUTH2_CLIENT,
+        AUTH_GSSAPI_CLIENT;
 
         @Override
         public String toString() {
@@ -139,6 +146,8 @@ public class AuthPlugin {
             return Client.AUTHENTICATION_OPENID_CONNECT_CLIENT.toString();
         } else if (serverPluginName.equalsIgnoreCase(Server.AUTHENTICATION_OAUTH2.toString())) {
             return Client.AUTHENTICATION_OAUTH2_CLIENT.toString();
+        } else if (serverPluginName.equalsIgnoreCase(Server.KERBEROS.toString())) {
+            return Client.AUTH_GSSAPI_CLIENT.toString();
         }
         return null;
     }

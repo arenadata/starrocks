@@ -151,8 +151,10 @@ public class MysqlProto {
         try {
             switchAuthPlugin(authPacket, context);
         } catch (AuthenticationException e) {
-            // receive response failed.
-            LOG.warn("read auth switch response failed for user {}", authPacket.getUser());
+            LOG.warn("auth switch failed for user {}, {}", authPacket.getUser(), e.getMessage());
+            context.getState().setErrorCode(ErrorCode.ERR_AUTHENTICATION_FAIL);
+            context.getState().setError(e.getMessage());
+            sendResponsePacket(context);
             return new NegotiateResult(authPacket, NegotiateState.READ_AUTH_SWITCH_PKG_FAILED);
         }
 
