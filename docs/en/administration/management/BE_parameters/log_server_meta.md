@@ -210,7 +210,7 @@ This topic introduces the following types of FE configurations:
 - Type: Int
 - Unit: -
 - Is mutable: No
-- Description: The port of a dedicated HTTP server for metrics scraping. `0` disables it. This server only serves `/metrics`, `/metrics/memory`, and `/api/health`. Admin, profiling, and data endpoints stay on `be_http_port`. Set `be_metrics_enable_https` to `true` to serve HTTPS on this port, so that Prometheus can scrape metrics over TLS while `be_http_port` keeps serving plain HTTP for internal traffic such as tablet clone and Stream Load. `/metrics` on `be_http_port` remains plaintext. Restrict access to `be_http_port` if metrics must stay confidential. Example Prometheus Operator `PodMonitor` endpoint: `port: metrics`, `scheme: https`, `tlsConfig: {ca: ...}`.
+- Description: The port of a dedicated HTTP server for metrics scraping. `0` disables it. This server only serves `/metrics`, `/metrics/memory`, and `/api/health`. Admin, profiling, and data endpoints stay on `be_http_port`. Set `be_metrics_enable_https` to `true` to serve HTTPS on this port, so that Prometheus can scrape metrics over TLS while `be_http_port` keeps serving plain HTTP for internal traffic such as tablet clone and Stream Load. When this port is set, `/metrics` and `/metrics/memory` are no longer served on `be_http_port`, so scrapers must switch to this port. `/api/health` stays available on both ports. Example Prometheus Operator `PodMonitor` endpoint: `port: metrics`, `scheme: https`, `tlsConfig: {ca: ...}`.
 - Introduced in: -
 
 ### be_port
