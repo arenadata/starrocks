@@ -57,6 +57,7 @@ CONF_String(ssl_private_key_path, "");
 
 // Port of a dedicated HTTP server that only serves /metrics, /metrics/memory and /api/health.
 // 0 disables it. Unlike be_http_port, it can serve HTTPS (see be_metrics_enable_https).
+// When set, /metrics and /metrics/memory are no longer served on be_http_port.
 CONF_Int32(be_metrics_port, "0");
 // Serve HTTPS instead of HTTP on be_metrics_port, using ssl_certificate_path and ssl_private_key_path.
 // Independent of enable_https, which only controls the bRPC server.

@@ -229,8 +229,8 @@ Status HttpServiceBE::start() {
     _ev_http_server->register_handler(HttpMethod::GET, "/ioprofile", ioprofile_action);
     _http_handlers.emplace_back(ioprofile_action);
 
-    // register metrics
-    {
+    // register metrics, unless they are served by the dedicated metrics port
+    if (config::be_metrics_port <= 0) {
         auto action = new MetricsAction(StarRocksMetrics::instance()->metrics());
         _ev_http_server->register_handler(HttpMethod::GET, "/metrics", action);
         _http_handlers.emplace_back(action);
