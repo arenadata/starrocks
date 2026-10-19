@@ -259,6 +259,19 @@ include_directories(${Poco_INCLUDE_DIRS})
 add_library(libevent STATIC IMPORTED)
 set_target_properties(libevent PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libevent.a)
 
+# libevent_openssl enables HTTPS on EvHttpServer (be_metrics_enable_https). It is optional so that
+# BE still builds against a thirdparty tree whose libevent was built without OpenSSL.
+if (EXISTS ${THIRDPARTY_DIR}/lib/libevent_openssl.a)
+    add_library(libevent_openssl STATIC IMPORTED)
+    set_target_properties(libevent_openssl PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libevent_openssl.a)
+    add_definitions(-DSTARROCKS_HAVE_EVHTTP_SSL)
+    set(LIBEVENT_OPENSSL_LIB libevent_openssl)
+    message(STATUS "libevent_openssl found, EvHttpServer HTTPS enabled")
+else()
+    set(LIBEVENT_OPENSSL_LIB "")
+    message(WARNING "libevent_openssl.a not found in ${THIRDPARTY_DIR}/lib, EvHttpServer HTTPS disabled")
+endif()
+
 add_library(openssl STATIC IMPORTED)
 set_target_properties(openssl PROPERTIES IMPORTED_LOCATION ${THIRDPARTY_DIR}/lib/libssl.a)
 
@@ -924,6 +937,7 @@ set(STARROCKS_DEPENDENCIES
     # Otherwise, he will use the lz4 Library in librdkafka
     lz4
     libevent
+    ${LIBEVENT_OPENSSL_LIB}
     curl
     ${Poco_LIBRARIES}
     libz
