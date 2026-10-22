@@ -488,4 +488,30 @@ TEST_F(HdfsFileSystemTest, verify_hdfs_create_directory_behavior) {
     }
 }
 
+TEST_F(HdfsFileSystemTest, read_at_fully) {
+    // NOTE: use separate thread to run the test case to avoid some weird tls memory issue introduced by JVM
+    auto thread = std::thread([this] {
+        auto fs = new_fs_hdfs(FSOptions());
+        const std::string filepath = "file://" + _root_path + "/read_at_fully";
+        WritableFileOptions opts{.sync_on_close = false, .mode = FileSystem::CREATE_OR_OPEN_WITH_TRUNCATE};
+        auto wfile = fs->new_writable_file(opts, filepath);
+        ASSERT_TRUE(wfile.ok());
+        ASSERT_TRUE((*wfile)->append(Slice("0123456789")).ok());
+        ASSERT_TRUE((*wfile)->close().ok());
+
+        auto rfile = fs->new_random_access_file(filepath);
+        ASSERT_TRUE(rfile.ok());
+        char buf[4];
+        ASSERT_TRUE((*rfile)->read_at_fully(3, buf, sizeof(buf)).ok());
+        EXPECT_EQ("3456", std::string(buf, sizeof(buf)));
+        // read_fully() continues where read_at_fully() stopped
+        ASSERT_TRUE((*rfile)->read_fully(buf, 2).ok());
+        EXPECT_EQ("78", std::string(buf, 2));
+        ASSERT_TRUE((*rfile)->read_at_fully(0, buf, 0).ok());
+        // reading past the end of the file is an error, not a short read
+        EXPECT_FALSE((*rfile)->read_at_fully(8, buf, sizeof(buf)).ok());
+    });
+    thread.join();
+}
+
 } // namespace starrocks

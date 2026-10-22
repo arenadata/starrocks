@@ -22,8 +22,8 @@ starting with `fe.conf` / `be.conf` / `cn.conf`. What the installation itself ne
 * `bin/hadoop_env.sh` sets `HADOOP_CLASSPATH` and `HADOOP_USER_NAME`. A `conf/hadoop_env.sh` provided by
   the deployment is still sourced afterwards and can override anything it sets.
 * `lib/default-conf/` holds the configuration files shipped with the image (`core-site.xml`, and
-  `log4j2.properties` for BE/CN). It is on the classpath after `conf`, so a file of the same name provided
-  in `conf` takes precedence.
+  `log4j2.properties` / `log4j.properties` for BE/CN). It is on the classpath after `conf`, so a file of the
+  same name provided in `conf` takes precedence.
 
 What still has to be writable:
 
