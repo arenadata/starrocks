@@ -39,11 +39,10 @@
             <version>9.1</version>
         </dependency>
 
-        <!-- https://mvnrepository.com/artifact/org.apache.commons/commons-lang3 -->
+        <!-- version managed in the parent to match ${hadoop.version}'s lang3 (the fat jar shadows hadoop/common and provides ExceptionUtils for java_udf.cpp) -->
         <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-lang3</artifactId>
-            <version>3.9</version>
         </dependency>
     </dependencies>
 
