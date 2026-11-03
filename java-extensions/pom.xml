@@ -45,7 +45,11 @@
         <io.netty.version>4.1.133.Final</io.netty.version>
         <protobuf-java.version>3.25.9</protobuf-java.version>
         <nimbusds.version>9.37.2</nimbusds.version>
-        <commons-io.version>2.14.0</commons-io.version>
+        <!-- commons-configuration2 2.15.1 (hadoop 3.4.3.2 line) needs >= 2.22.0 (IOSupplier.getUnchecked) -->
+        <commons-io.version>2.22.0</commons-io.version>
+        <!-- must match the commons-lang3 brought by ${hadoop.version}: the udf-extensions fat jar
+             shadows hadoop/common on the BE classpath and a version drift breaks ofs:// -->
+        <commons-lang3.version>3.20.0</commons-lang3.version>
         <gcs.connector.version>3.0.13</gcs.connector.version>
         <slf4j.version>1.7.36</slf4j.version>
         <arrow.version>17.0.0</arrow.version>
@@ -170,6 +174,12 @@
                 <groupId>commons-io</groupId>
                 <artifactId>commons-io</artifactId>
                 <version>${commons-io.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
             </dependency>
 
             <dependency>
