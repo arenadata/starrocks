@@ -68,7 +68,7 @@ public abstract class RangerAccessController extends ExternalAccessController im
     public Expr getColumnMaskingExpression(RangerAccessResourceImpl resource, Column column, ConnectContext context) {
         RangerStarRocksAccessRequest request = RangerStarRocksAccessRequest.createAccessRequest(
                 resource, context.getCurrentUserIdentity(), context.getGroups(),
-                PrivilegeType.SELECT.name().toLowerCase(ENGLISH));
+                PrivilegeType.SELECT.name().toLowerCase(ENGLISH), PrivilegeType.SELECT.name());
 
         RangerAccessResult result = rangerPlugin.evalDataMaskPolicies(request, null);
         if (result != null && result.isMaskEnabled()) {
@@ -101,7 +101,7 @@ public abstract class RangerAccessController extends ExternalAccessController im
     protected Expr getRowAccessExpression(RangerAccessResourceImpl resource, ConnectContext context) {
         RangerStarRocksAccessRequest request = RangerStarRocksAccessRequest.createAccessRequest(
                 resource, context.getCurrentUserIdentity(), context.getGroups(),
-                PrivilegeType.SELECT.name().toLowerCase(ENGLISH));
+                PrivilegeType.SELECT.name().toLowerCase(ENGLISH), PrivilegeType.SELECT.name());
         RangerAccessResult result = rangerPlugin.evalRowFilterPolicies(request, null);
         if (result != null && result.isRowFilterEnabled()) {
             return SqlParser.parseSqlToExpr(result.getFilterExpr(), context.getSessionVariable().getSqlMode());
@@ -124,8 +124,8 @@ public abstract class RangerAccessController extends ExternalAccessController im
             accessType = convertToAccessType(privilegeType);
         }
 
-        RangerStarRocksAccessRequest request =
-                RangerStarRocksAccessRequest.createAccessRequest(resource, user, groups, accessType);
+        RangerStarRocksAccessRequest request = RangerStarRocksAccessRequest.createAccessRequest(
+                resource, user, groups, accessType, privilegeType.name());
         RangerAccessResult result = rangerPlugin.isAccessAllowed(request);
         if (result == null || !result.getIsAllowed()) {
             throw new AccessDeniedException();
