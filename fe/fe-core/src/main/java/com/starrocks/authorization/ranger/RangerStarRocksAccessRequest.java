@@ -29,14 +29,20 @@ public class RangerStarRocksAccessRequest extends RangerAccessRequestImpl {
     private RangerStarRocksAccessRequest() {
     }
 
+    /**
+     * @param accessType Ranger access type evaluated against policies (shown as "Permission" in Ranger audit)
+     * @param action     StarRocks privilege being checked, e.g. "SELECT" (shown as "Access Type" in Ranger audit)
+     */
     public static RangerStarRocksAccessRequest createAccessRequest(RangerAccessResourceImpl resource,
                                                                    UserIdentity user,
                                                                    Set<String> groups,
-                                                                   String accessType) {
+                                                                   String accessType,
+                                                                   String action) {
         RangerStarRocksAccessRequest request = new RangerStarRocksAccessRequest();
         request.setUser(user.getUser());
         request.setUserGroups(groups);
         request.setAccessType(accessType);
+        request.setAction(action);
         request.setResource(resource);
         request.setClientIPAddress(user.getHost());
         request.setClientType("starrocks");
