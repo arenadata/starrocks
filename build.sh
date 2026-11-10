@@ -45,7 +45,7 @@ fi
 
 cd $STARROCKS_HOME
 if [ -z $STARROCKS_VERSION ]; then
-    export STARROCKS_VERSION="4.0.10.1-4.4.0-0"
+    export STARROCKS_VERSION="4.0.10.2-4.5.0-0"
 fi
 
 if [ -z $STARROCKS_COMMIT_HASH ] ; then
