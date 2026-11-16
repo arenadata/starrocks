@@ -17,7 +17,9 @@
 #include <fmt/format.h>
 #include <hdfs/hdfs.h>
 
+#include <algorithm>
 #include <exception>
+#include <limits>
 #include <utility>
 
 #include "fs/encrypt_file.h"
@@ -118,6 +120,29 @@ public:
         return Status::IOError(fmt::format("fail to hdfsPread {}: {}", _path, get_hdfs_err_msg()));
     }
 
+    // Reads exactly |size| bytes at the current offset with one hdfsPreadFully call per chunk.
+    // A loop over hdfsPread is much more expensive for streams that cannot read into a native buffer (S3A,
+    // ofs): libhdfs allocates a Java array of the requested length on every call, and such a stream returns
+    // only what one socket read delivers, so a multi-MB read turns into hundreds of multi-MB allocations.
+    Status pread_fully(uint8_t* data, int64_t size, int retry = 0) {
+        RETURN_IF_ERROR(ensureOpened());
+        while (size > 0) {
+            auto n = static_cast<tSize>(std::min<int64_t>(size, std::numeric_limits<tSize>::max()));
+            for (int i = 0;; i++) {
+                if (hdfsPreadFully(getFS(), _file, _offset, data, n) == 0) break;
+                if (i == retry) {
+                    return Status::IOError(fmt::format("fail to hdfsPreadFully {}: {}", _path, get_hdfs_err_msg()));
+                }
+                (void)close();
+                RETURN_IF_ERROR(ensureOpened());
+            }
+            _offset += n;
+            data += n;
+            size -= n;
+        }
+        return Status::OK();
+    }
+
     StatusOr<int64_t> read(uint8_t* data, int64_t size, int retry = 0) {
         RETURN_IF_ERROR(ensureOpened());
         RETURN_IF_ERROR(seek(_offset));
@@ -181,6 +206,8 @@ public:
     ~HdfsInputStream() override;
 
     StatusOr<int64_t> read(void* data, int64_t size) override;
+    // Also serves read_at_fully(), which seeks and calls read_fully().
+    Status read_fully(void* data, int64_t count) override;
     StatusOr<int64_t> get_size() override;
     StatusOr<int64_t> position() override { return _offset; }
     StatusOr<std::unique_ptr<io::NumericStatistics>> get_numeric_statistics() override;
@@ -213,6 +240,10 @@ StatusOr<int64_t> HdfsInputStream::read(void* data, int64_t size) {
     }
     return _handle->pread(static_cast<uint8_t*>(data), size, config::hdfs_client_io_read_retry);
     // return _handle->read(static_cast<uint8_t*>(data), size, config::hdfs_client_io_read_retry);
+}
+
+Status HdfsInputStream::read_fully(void* data, int64_t count) {
+    return _handle->pread_fully(static_cast<uint8_t*>(data), count, config::hdfs_client_io_read_retry);
 }
 
 Status HdfsInputStream::seek(int64_t offset) {

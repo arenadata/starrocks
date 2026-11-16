@@ -169,7 +169,10 @@ export LIBHDFS_OPTS="$LIBHDFS_OPTS -Xrs"
 # put $STARROCKS_HOME/conf ahead of $HADOOP_CLASSPATH so that custom config can replace the config in $HADOOP_CLASSPATH
 # $STARROCKS_HOME/lib/default-conf holds the configuration files shipped with the installation
 # (core-site.xml, log4j2.properties). It goes after $STARROCKS_HOME/conf, so a user provided file always wins.
-export CLASSPATH=${STARROCKS_HOME}/lib/jni-packages/starrocks-hadoop-ext.jar:$STARROCKS_HOME/conf:$STARROCKS_HOME/lib/default-conf:$STARROCKS_HOME/lib/jni-packages/*:$HADOOP_CLASSPATH:$CLASSPATH
+# $STARROCKS_HOME/lib/common-runtime-lib holds the AWS SDK v2 that hadoop-aws (S3A) needs when a path is read
+# through libhdfs (fallback_to_hadoop_fs_list). It goes before $HADOOP_CLASSPATH, the same order the JNI scanner
+# class loader uses (ScannerHelper), so both resolve the libraries they share (httpcore, commons-codec, ...) alike.
+export CLASSPATH=${STARROCKS_HOME}/lib/jni-packages/starrocks-hadoop-ext.jar:$STARROCKS_HOME/conf:$STARROCKS_HOME/lib/default-conf:$STARROCKS_HOME/lib/jni-packages/*:$STARROCKS_HOME/lib/common-runtime-lib/*:$HADOOP_CLASSPATH:$CLASSPATH
 
 
 # ================= native section =====================
