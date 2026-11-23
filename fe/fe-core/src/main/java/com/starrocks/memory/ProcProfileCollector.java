@@ -15,6 +15,7 @@
 package com.starrocks.memory;
 
 import com.starrocks.StarRocksFE;
+import com.google.common.annotations.VisibleForTesting;
 import com.starrocks.common.Config;
 import com.starrocks.common.util.FrontendDaemon;
 import one.profiler.AsyncProfiler;
@@ -29,6 +30,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Calendar;
@@ -45,6 +49,7 @@ public class ProcProfileCollector extends FrontendDaemon {
     private final String profileLogDir;
 
     private long lastLogTime = -1;
+    private boolean extractPathFallbackLogged = false;
 
     public ProcProfileCollector() {
         super("ProcProfileCollector", 1000L);
@@ -75,17 +80,31 @@ public class ProcProfileCollector extends FrontendDaemon {
     // AsyncProfiler depends on the native library libasyncProfiler.so, which is bundled inside the JAR.
     // By default, it extracts this library to the /tmp directory in order to load it.
     // However, if /tmp is mounted with the "noexec" option, loading the library will fail.
-    // To avoid this issue, we explicitly set 'one.profiler.extractPath' to a directory with execute permissions.
-    // See prepareLibrary() for how the extraction path is set to a safer default under STARROCKS_HOME.
+    // To avoid this issue, we explicitly set 'one.profiler.extractPath' to STARROCKS_HOME/bin,
+    // but only when that directory is actually writable: containers commonly run with a read-only
+    // root filesystem, where writing into bin/ fails with EROFS on every collection cycle, so the
+    // library default applies instead (a single INFO line documents the fallback).
     // See https://github.com/StarRocks/starrocks/issues/64502
     private void prepareLibrary() {
+        prepareLibrary(StarRocksFE.STARROCKS_HOME_DIR);
+    }
+
+    // The home directory is a parameter so the unit test can exercise the writability
+    // decision without the process environment.
+    @VisibleForTesting
+    void prepareLibrary(String homeDir) {
         final String libPathProperty = "one.profiler.extractPath";
         String value = System.getProperty(libPathProperty);
-        if (StringUtils.isEmpty(value)) {
-            String dir = StarRocksFE.STARROCKS_HOME_DIR + "/bin/";
-            if (StringUtils.isNotEmpty(StarRocksFE.STARROCKS_HOME_DIR) && new File(dir).exists()) {
+        if (StringUtils.isEmpty(value) && StringUtils.isNotEmpty(homeDir)) {
+            String dir = homeDir + "/bin/";
+            Path dirPath = Paths.get(dir);
+            if (Files.isDirectory(dirPath) && Files.isWritable(dirPath)) {
                 System.setProperty(libPathProperty, dir);
                 LOG.info("change the system property {} to {}", libPathProperty, dir);
+            } else if (!extractPathFallbackLogged) {
+                extractPathFallbackLogged = true;
+                LOG.info("keep the system property {} unset: {} is not usable, the library default applies",
+                        libPathProperty, dir);
             }
         }
     }
